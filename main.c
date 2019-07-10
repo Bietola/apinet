@@ -13,7 +13,7 @@ int strcomp(const void* lhs, const void* rhs) {
 }
 
 /************************************************************************************/
-/* Generic set datastructure. Implemented using a BST. Also used to represent maps. */
+/* Generic set datastructure. Implemented using a BST. Also used to represent sets. */
 /************************************************************************************/
 
 // Constants returned as part of error mechanisms
@@ -34,6 +34,7 @@ typedef struct _set_node_t {
 // Set type
 typedef struct _set_t {
     set_node_t* root;
+    compfun_t comp;
 } set_t;
 
 // Create a new node with no children
@@ -46,9 +47,10 @@ set_node_t* set_node_new(void* data) {
 }
 
 // Create a new empty set
-set_t* set_empty() {
+set_t* set_empty(compfun_t comp) {
     set_t* result = malloc(sizeof(set_t));
     result->root = NULL;
+    result->comp = comp;
     return result;
 }
 
@@ -87,7 +89,7 @@ int set_add(set_t* set, void* element) {
     if (set == NULL)
         return SET_ERR_NULL_SET;
 
-    node_add(&(set->root), element, &strcomp);
+    node_add(&(set->root), element, set->comp);
 
     return SET_OK;
 }                                                   
@@ -104,20 +106,34 @@ void node_add(set_node_t** node, void* element, compfun_t comp) {
 
 // Retrieves the specified element from a set. Returns NULL if there is no
 // such element inside the set.
-/* set_node_t* node_get(set_node_t* node, void* element, compfun_t comp) { */
-/*     if (node == NULL) */
-/*         return NULL; */
+set_node_t* node_get(set_node_t*, const void*, compfun_t);
+void* set_get(set_t* set, const void* element) {
+    const set_node_t* wanted_node = node_get(set->root, element, set->comp);
 
-    /* if (comp(element, node->data) == 0) */
-    /*     return */ 
-/* } */
-/* void set_get(set_) */
+    if (wanted_node == NULL)
+        return NULL;
+
+    return wanted_node->data;
+}
+
+set_node_t* node_get(set_node_t* node, const void* element, compfun_t comp) {  
+    if (node == NULL)  
+        return NULL;  
+
+    int comp_result = comp(element, node->data);
+    if (comp_result == 0)  
+        return node;
+    else if (comp_result < 0)
+        return node_get(node->left, element, comp);
+    else
+        return node_get(node->right, element, comp);
+}
 
 /********/
 /* Main */
 /********/
 int main() {
-    set_t* set = set_empty();
+    set_t* set = set_empty(&strcomp);
 
     char* command = malloc(sizeof(char) * 1024);
     while (1) {
@@ -136,6 +152,19 @@ int main() {
             if (err == SET_ERR_NULL_ELE) {
                 assert(NULL);
             }
+        } else if (strcmp(command, "get") == 0) {
+            // retrieve string to get
+            char* to_get = malloc(sizeof(char) * 1024);
+            scanf("%s", to_get);
+
+            // get it
+            void* result = set_get(set, (void*) to_get);
+
+            // print the result as a string if present
+            if (result == NULL)
+                puts("NOT PRESENT!");
+            else 
+                puts((const char*) result);
         } else if (strcmp(command, "print") == 0) {
             set_print(set);
             printf("\n");
