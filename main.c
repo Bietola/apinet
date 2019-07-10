@@ -54,6 +54,25 @@ set_t* set_empty(compfun_t comp) {
     return result;
 }
 
+// Free memory allocated by given set
+void node_free(set_node_t*);
+int set_free(set_t* set) {
+    if (!set)
+        return SET_ERR_NULL_SET;
+
+    node_free(set->root); set->root = NULL;
+    free(set);
+
+    return SET_OK;
+}
+void node_free(set_node_t* node) {
+    if (node) {
+        free(node->data); node->data = NULL;
+        node_free(node->left); node->left = NULL;
+        node_free(node->right); node->right = NULL;
+    }
+}
+
 // Print the contents of a set in order
 void node_print(set_node_t*);
 int set_print(set_t* set) {
@@ -108,14 +127,18 @@ void node_add(set_node_t** node, void* element, compfun_t comp) {
 // such element inside the set.
 set_node_t* node_get(set_node_t*, const void*, compfun_t);
 void* set_get(set_t* set, const void* element) {
+    // Search element starting from the set's root node using its associated comparison function.
     const set_node_t* wanted_node = node_get(set->root, element, set->comp);
 
+    // A null node from node_get means the element was not found; return NULL in turn to indicate
+    // the same thing.
     if (wanted_node == NULL)
         return NULL;
 
+    // Element was found!
     return wanted_node->data;
 }
-
+// Helper for node_get function.
 set_node_t* node_get(set_node_t* node, const void* element, compfun_t comp) {  
     if (node == NULL)  
         return NULL;  
@@ -135,7 +158,7 @@ set_node_t* node_get(set_node_t* node, const void* element, compfun_t comp) {
 int main() {
     set_t* set = set_empty(&strcomp);
 
-    char* command = malloc(sizeof(char) * 1024);
+    char command[1024];
     while (1) {
         printf("> ");
         scanf("%s", command);
@@ -172,6 +195,8 @@ int main() {
             break;
         }
     }
+
+    set_free(set);
 
     return 0;
 }
