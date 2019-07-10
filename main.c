@@ -1,22 +1,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 /**********************************************************/
 /* Set of strings datastructure. Implemented using a BST. */
 /**********************************************************/
 
 // Constants returned as part of error mechanisms
-#define SET_OK           0;
-#define SET_ERR_NULL_SET 1;
-#define SET_ERR_NULL_ELE 2;
+#define SET_OK           0
+#define SET_ERR_NULL_SET 1
+#define SET_ERR_NULL_ELE 2
 
 // Node type
 typedef struct _set_node_t {
     const char* data;
     struct _set_node_t* left;
     struct _set_node_t* right;
-
 } set_node_t;
 
 // Set type
@@ -95,12 +95,30 @@ void node_add(set_node_t** node, const char* element) {
 int main() {
     set_t* set = set_empty();
 
-    set_add(set, "a");
-    set_add(set, "b");
-    set_add(set, "c");
+    char* command = malloc(sizeof(char) * 1024);
+    while (1) {
+        printf("> ");
+        scanf("%s", command);
 
-    set_print(set);
-    printf("\n");;
+        if (strcmp(command, "add") == 0) {
+            // retrieve string to add
+            char* toAdd = malloc(sizeof(char) * 1024);
+            scanf("%s", toAdd);
+
+            // add it to set
+            int err = set_add(set, toAdd);
+
+            // check for errors
+            if (err == SET_ERR_NULL_ELE) {
+                assert(NULL);
+            }
+        } else if (strcmp(command, "print") == 0) {
+            set_print(set);
+            printf("\n");
+        } else if (strcmp(command, "quit") == 0) {
+            break;
+        }
+    }
 
     return 0;
 }
