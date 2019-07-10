@@ -3,18 +3,30 @@
 #include <string.h>
 #include <assert.h>
 
-/**********************************************************/
-/* Set of strings datastructure. Implemented using a BST. */
-/**********************************************************/
+/*************/
+/* Utilities */
+/*************/
+
+// Custom, non type-safe, strcmp function that works nicely with the set_t interface
+int strcomp(const void* lhs, const void* rhs) {
+    return strcmp((const char*) lhs, (const char*) rhs);
+}
+
+/************************************************************************************/
+/* Generic set datastructure. Implemented using a BST. Also used to represent maps. */
+/************************************************************************************/
 
 // Constants returned as part of error mechanisms
 #define SET_OK           0
 #define SET_ERR_NULL_SET 1
 #define SET_ERR_NULL_ELE 2
 
+// Function type used to customize set ordering
+typedef int (*compfun_t)(const void* lhs, const void* rhs);
+
 // Node type
 typedef struct _set_node_t {
-    const char* data;
+    void* data;
     struct _set_node_t* left;
     struct _set_node_t* right;
 } set_node_t;
@@ -25,7 +37,7 @@ typedef struct _set_t {
 } set_t;
 
 // Create a new node with no children
-set_node_t* set_node_new(const char* data) {
+set_node_t* set_node_new(void* data) {
     set_node_t* result = malloc(sizeof(set_node_t));
     result->left = NULL;
     result->right = NULL;
@@ -59,35 +71,47 @@ void node_print(set_node_t* node) {
     if (node) {
         if (node->left)
             node_print(node->left);
+
+        printf("%s, ", (const char*) node->data);
+
         if (node->right)
             node_print(node->right);
-
-        printf("%s, ", node->data);
     }
 }
                                                      
 // Add an element to the set
-void node_add(set_node_t**, const char*);
-int set_add(set_t* set, const char* element) {
+void node_add(set_node_t**, void*, compfun_t comp);
+int set_add(set_t* set, void* element) {
     if (element == NULL)                            
         return SET_ERR_NULL_ELE;                    
     if (set == NULL)
         return SET_ERR_NULL_SET;
 
-    node_add(&(set->root), element);
+    node_add(&(set->root), element, &strcomp);
 
     return SET_OK;
 }                                                   
 // Helper function to aid recursion
-void node_add(set_node_t** node, const char* element) {
+void node_add(set_node_t** node, void* element, compfun_t comp) {
     if (*node == NULL) {
         *node = set_node_new(element);
-    } else if (strcmp(element, (*node)->data) < 0) {
-        node_add(&((*node)->left), element);
+    } else if (comp(element, (*node)->data) < 0) {
+        node_add(&((*node)->left), element, comp);
     } else {
-        node_add(&((*node)->right), element);               
+        node_add(&((*node)->right), element, comp);
     }
 }
+
+// Retrieves the specified element from a set. Returns NULL if there is no
+// such element inside the set.
+/* set_node_t* node_get(set_node_t* node, void* element, compfun_t comp) { */
+/*     if (node == NULL) */
+/*         return NULL; */
+
+    /* if (comp(element, node->data) == 0) */
+    /*     return */ 
+/* } */
+/* void set_get(set_) */
 
 /********/
 /* Main */
@@ -106,7 +130,7 @@ int main() {
             scanf("%s", toAdd);
 
             // add it to set
-            int err = set_add(set, toAdd);
+            int err = set_add(set, (void*) toAdd);
 
             // check for errors
             if (err == SET_ERR_NULL_ELE) {
