@@ -12,6 +12,11 @@ int strcomp(const void* lhs, const void* rhs) {
     return strcmp((const char*) lhs, (const char*) rhs);
 }
 
+// Custom duplication handling function for strings set that simply discards the newly inserted o
+void discard_dup(void* old_ele, void* new_ele) {
+    free((char*) new_ele);
+}
+
 /************************************************************************************/
 /* Generic set datastructure. Implemented using a BST. Also used to represent sets. */
 /************************************************************************************/
@@ -24,6 +29,9 @@ int strcomp(const void* lhs, const void* rhs) {
 // Function type used to customize set ordering
 typedef int (*compfun_t)(const void* lhs, const void* rhs);
 
+// Function type used to customize set duplicate handling
+typedef void (*handle_dup_fun_t)(void* old, void* new);
+
 // Node type
 typedef struct _set_node_t {
     void* data;
@@ -35,6 +43,7 @@ typedef struct _set_node_t {
 typedef struct _set_t {
     set_node_t* root;
     compfun_t comp;
+    handle_dup_fun_t handle_dup;
 } set_t;
 
 // Create a new node with no children
@@ -47,10 +56,11 @@ set_node_t* set_node_new(void* data) {
 }
 
 // Create a new empty set
-set_t* set_empty(compfun_t comp) {
+set_t* set_empty(compfun_t comp, handle_dup_fun_t handle_dup) {
     set_t* result = malloc(sizeof(set_t));
     result->root = NULL;
     result->comp = comp;
+    result->handle_dup = handle_dup;
     return result;
 }
 
@@ -99,27 +109,33 @@ void node_print(set_node_t* node) {
             node_print(node->right);
     }
 }
-                                                     
+
 // Add an element to the set
-void node_add(set_node_t**, void*, compfun_t comp);
+void node_add(set_node_t**, void*, compfun_t comp, handle_dup_fun_t);
 int set_add(set_t* set, void* element) {
     if (element == NULL)                            
         return SET_ERR_NULL_ELE;                    
     if (set == NULL)
         return SET_ERR_NULL_SET;
 
-    node_add(&(set->root), element, set->comp);
+    node_add(&(set->root), element, set->comp, set->handle_dup);
 
     return SET_OK;
 }                                                   
 // Helper function to aid recursion
-void node_add(set_node_t** node, void* element, compfun_t comp) {
+void node_add(set_node_t** node, void* element, compfun_t comp, handle_dup_fun_t handle_dup) {
     if (*node == NULL) {
         *node = set_node_new(element);
-    } else if (comp(element, (*node)->data) < 0) {
-        node_add(&((*node)->left), element, comp);
     } else {
-        node_add(&((*node)->right), element, comp);
+        void* comped_ele = (*node)->data;
+        int comp_res = comp(element, comped_ele);
+        if (comp_res == 0) {
+            handle_dup(comped_ele, element);
+        } else if (comp_res < 0) {
+            node_add(&((*node)->left), element, comp, handle_dup);
+        } else {
+            node_add(&((*node)->right), element, comp, handle_dup);
+        }
     }
 }
 
@@ -156,7 +172,7 @@ set_node_t* node_get(set_node_t* node, const void* element, compfun_t comp) {
 /* Main */
 /********/
 int main() {
-    set_t* set = set_empty(&strcomp);
+    set_t* set = set_empty(&strcomp, &discard_dup);
 
     char command[1024];
     while (1) {
