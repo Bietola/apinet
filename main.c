@@ -126,36 +126,36 @@ void node_print(set_node_t** node) {
 }
 
 // Add an element to the set
-void node_add(set_node_t**, set_node_t*, compfun_t comp, handle_dup_fun_t, set_node_t*);
+set_node_t* node_add(set_node_t*, set_node_t*, compfun_t comp, handle_dup_fun_t, set_node_t*);
 int set_add(set_t* set, void* element) {
     if (element == NULL)                            
         return SET_ERR_NULL_ELE;                    
     if (set == NULL)
         return SET_ERR_NULL_SET;
 
-    node_add(&(set->root), set_node_new(element, NULL), set->comp, set->handle_dup, NULL);
+    set->root = node_add(set->root, set_node_new(element, NULL), set->comp, set->handle_dup, NULL);
 
     return SET_OK;
 }                                                   
 // Helper function to aid recursion
-// TODO: see if returning node is better than ** 
 //  NB. cur_parent is meant to be NULL at first call
-void node_add(set_node_t** root, set_node_t* to_add, compfun_t comp, handle_dup_fun_t handle_dup,
-              set_node_t* cur_parent) {
-    if (*root == NULL) {
+set_node_t* node_add(set_node_t* root, set_node_t* to_add, compfun_t comp, handle_dup_fun_t handle_dup,
+                     set_node_t* cur_parent) {
+    if (root == NULL) {
         to_add->parent = cur_parent;
-        *root = to_add;
+        return to_add;
     } else {
-        void* comped_ele = (*root)->data;
+        void* comped_ele = root->data;
         void* element_to_add = to_add->data;
         int comp_res = comp(element_to_add, comped_ele);
         if (comp_res == 0) {
             handle_dup(comped_ele, element_to_add);
         } else if (comp_res < 0) {
-            node_add(&((*root)->left), to_add, comp, handle_dup, *root);
+            root->left = node_add(root->left, to_add, comp, handle_dup, root);
         } else {
-            node_add(&((*root)->right), to_add, comp, handle_dup, *root);
+            root->right = node_add(root->right, to_add, comp, handle_dup, root);
         }
+        return root;
     }
 }
 
@@ -188,22 +188,33 @@ set_node_t* node_get(set_node_t* node, const void* element, compfun_t comp) {
         return node_get(node->right, element, comp);
 }
 
-// Remove an element from a given set and return it
- /* set_node_t** node_remove(set_node_t**); */ 
- /* void set_remove(set_t* set, void* ele_to_remove) { */ 
- /*     // remove and free memory of node */ 
- /*     node_remove(&(node_get(set->root, ele_to_remove, set->comp))); */ 
- /* } */ 
- /* set_node_t* node_remove(set_node_t* to_remove) { */ 
- /*     // NB. the choice of the substitute node is albitrary */ 
- /*     // TODO: optimization opportunity */ 
- /*     set_node_t* substitute = to_remove->left; */ 
-
- /*     substitute->right = node_union(substitute->right, to_remove->right); */ 
- /*     node_rewire(to_remove, substitute); */ 
-
- /*     return to_remove; */ 
- /* } */ 
+/****************************************************************************/
+/* //                                                                       */
+/* void node_union(set_node_t* lhs, set_node_t** rhs, compfun_t comp) {     */
+/*     if (lhs) {                                                           */
+/*         node_add(&rhs, lhs, comp, &disallow_duplicates, NULL);           */
+/*         node_union(lhs->left, rhs, comp);                                */
+/*         node_union(lhs->right, rhs, comp);                               */
+/*     }                                                                    */
+/* }                                                                        */
+/*                                                                          */
+/* // Remove an element from a given set and return it                      */
+/* set_node_t** node_remove(set_node_t**);                                  */
+/* void set_remove(set_t* set, void* ele_to_remove) {                       */
+/*     // remove and free memory of node                                    */
+/*     node_remove(&(node_get(set->root, ele_to_remove, set->comp)));       */
+/* }                                                                        */
+/* set_node_t* node_remove(set_node_t* to_remove) {                         */
+/*     // NB. the choice of the substitute node is albitrary                */
+/*     // TODO: optimization opportunity                                    */
+/*     set_node_t* substitute = to_remove->left;                            */
+/*                                                                          */
+/*     substitute->right = node_union(substitute->right, to_remove->right); */
+/*     node_rewire(to_remove, substitute);                                  */
+/*                                                                          */
+/*     return to_remove;                                                    */
+/* }                                                                        */
+/****************************************************************************/
 
 
 /********/
