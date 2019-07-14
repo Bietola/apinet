@@ -83,31 +83,38 @@ void node_free(set_node_t* node) {
     }
 }
 
+// Apply a given function to all nodes in the set
+void node_walk(set_node_t* root, void (*func)(set_node_t**)) {
+    if (root) {
+        if (root->left)
+            node_walk(root->left, func);
+
+        func(&root);
+
+        if (root->right)
+            node_walk(root->right, func);
+    }
+}
+
 // Print the contents of a set in order
-void node_print(set_node_t*);
+void node_print(set_node_t**);
 int set_print(set_t* set) {
     if (!set)
         return SET_ERR_NULL_SET;
 
     printf("(");
 
-    node_print(set->root);
+    node_walk(set->root, &node_print);
 
     printf(")");
 
     return SET_OK;
 }
 // Helper function to aid recursion
-void node_print(set_node_t* node) {
-    if (node) {
-        if (node->left)
-            node_print(node->left);
-
-        printf("%s, ", (const char*) node->data);
-
-        if (node->right)
-            node_print(node->right);
-    }
+void node_print(set_node_t** node) {
+    if (!node) puts("NULLREF");
+    if (!(*node)) puts("NULL");
+    else puts((const char*) (*node)->data);
 }
 
 // Add an element to the set
@@ -141,10 +148,10 @@ void node_add(set_node_t** node, void* element, compfun_t comp, handle_dup_fun_t
 
 // Retrieves the specified element from a set. Returns NULL if there is no
 // such element inside the set.
-set_node_t* node_get(set_node_t*, const void*, compfun_t);
+set_node_t** node_get(set_node_t*, const void*, compfun_t);
 void* set_get(set_t* set, const void* element) {
     // Search element starting from the set's root node using its associated comparison function.
-    const set_node_t* wanted_node = node_get(set->root, element, set->comp);
+    const set_node_t* wanted_node = *(node_get(set->root, element, set->comp));
 
     // A null node from node_get means the element was not found; return NULL in turn to indicate
     // the same thing.
@@ -155,42 +162,57 @@ void* set_get(set_t* set, const void* element) {
     return wanted_node->data;
 }
 // Helper for node_get function.
-set_node_t* node_get(set_node_t* node, const void* element, compfun_t comp) {  
+set_node_t** node_get(set_node_t* node, const void* element, compfun_t comp) {  
     if (node == NULL)  
         return NULL;  
 
     int comp_result = comp(element, node->data);
     if (comp_result == 0)  
-        return node;
+        return &node;
     else if (comp_result < 0)
         return node_get(node->left, element, comp);
     else
         return node_get(node->right, element, comp);
 }
 
+// Remove an element from a given set and return it
+set_node_t** node_remove(set_node_t**);
+void set_remove(set_t* set, void* ele_to_remove) {
+    // remove and free memory of node
+    set_node_t** removed_node = node_remove(&(node_get(set->root, ele_to_remove, set->comp)));
+    node_free(*removed_node);
+    *removed_node = NULL;
+}
+set_node_t** node_remove(set_node_t** to_remove) {
+    // NB. the choice of the substitute node is albitrary
+    // TODO: optimization opportunity
+    set_node_t* substitue = (*to_remove)->left;
+
+    substitute->right = node_union(substitute->right, (*to_remove)->right);
+    node_rewire(to_remove, substitute);
+
+    return to_remove;
+}
+
+
 /********/
 /* Main */
 /********/
 int main() {
+    // All of apinet's entities
     set_t* set = set_empty(&strcomp, &discard_dup);
 
+    // All of apinet's relations
+    // TODO: set_t* relations = ...;
+
+    // User interaction loop
     char command[1024];
     while (1) {
+        // Read first section of command from user
         printf("> ");
         scanf("%s", command);
 
         if (strcmp(command, "add") == 0) {
-            // retrieve string to add
-            char* toAdd = malloc(sizeof(char) * 1024);
-            scanf("%s", toAdd);
-
-            // add it to set
-            int err = set_add(set, (void*) toAdd);
-
-            // check for errors
-            if (err == SET_ERR_NULL_ELE) {
-                assert(NULL);
-            }
         } else if (strcmp(command, "get") == 0) {
             // retrieve string to get
             char* to_get = malloc(sizeof(char) * 1024);
