@@ -1,0 +1,111 @@
+==10104== Memcheck, a memory error detector
+==10104== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.
+==10104== Using Valgrind-3.13.0 and LibVEX; rerun with -h for copyright info
+==10104== Command: ./a.out
+==10104== Parent PID: 10103
+==10104== 
+--10104-- 
+--10104-- Valgrind options:
+--10104--    --leak-check=full
+--10104--    --show-leak-kinds=all
+--10104--    --track-origins=yes
+--10104--    --verbose
+--10104--    --log-file=valgrind-out.txt
+--10104-- Contents of /proc/version:
+--10104--   Linux version 4.18.0-25-generic (buildd@lgw01-amd64-033) (gcc version 7.4.0 (Ubuntu 7.4.0-1ubuntu1~18.04.1)) #26~18.04.1-Ubuntu SMP Thu Jun 27 07:28:31 UTC 2019
+--10104-- 
+--10104-- Arch and hwcaps: AMD64, LittleEndian, amd64-cx16-lzcnt-rdtscp-sse3-avx-avx2-bmi
+--10104-- Page sizes: currently 4096, max supported 4096
+--10104-- Valgrind library directory: /usr/lib/valgrind
+--10104-- Reading syms from /home/dincio/code/apinet/a.out
+--10104-- Reading syms from /lib/x86_64-linux-gnu/ld-2.27.so
+--10104--   Considering /lib/x86_64-linux-gnu/ld-2.27.so ..
+--10104--   .. CRC mismatch (computed 1b7c895e wanted 2943108a)
+--10104--   Considering /usr/lib/debug/lib/x86_64-linux-gnu/ld-2.27.so ..
+--10104--   .. CRC is valid
+--10104-- Reading syms from /usr/lib/valgrind/memcheck-amd64-linux
+--10104--   Considering /usr/lib/valgrind/memcheck-amd64-linux ..
+--10104--   .. CRC mismatch (computed c25f395c wanted 0a9602a8)
+--10104--    object doesn't have a symbol table
+--10104--    object doesn't have a dynamic symbol table
+--10104-- Scheduler: using generic scheduler lock implementation.
+--10104-- Reading suppressions file: /usr/lib/valgrind/default.supp
+==10104== embedded gdbserver: reading from /tmp/vgdb-pipe-from-vgdb-to-10104-by-dincio-on-???
+==10104== embedded gdbserver: writing to   /tmp/vgdb-pipe-to-vgdb-from-10104-by-dincio-on-???
+==10104== embedded gdbserver: shared mem   /tmp/vgdb-pipe-shared-mem-vgdb-10104-by-dincio-on-???
+==10104== 
+==10104== TO CONTROL THIS PROCESS USING vgdb (which you probably
+==10104== don't want to do, unless you know exactly what you're doing,
+==10104== or are doing some strange experiment):
+==10104==   /usr/lib/valgrind/../../bin/vgdb --pid=10104 ...command...
+==10104== 
+==10104== TO DEBUG THIS PROCESS USING GDB: start GDB like this
+==10104==   /path/to/gdb ./a.out
+==10104== and then give GDB the following command
+==10104==   target remote | /usr/lib/valgrind/../../bin/vgdb --pid=10104
+==10104== --pid is optional if only one valgrind process is running
+==10104== 
+--10104-- REDIR: 0x401f2f0 (ld-linux-x86-64.so.2:strlen) redirected to 0x58060901 (???)
+--10104-- REDIR: 0x401f0d0 (ld-linux-x86-64.so.2:index) redirected to 0x5806091b (???)
+--10104-- Reading syms from /usr/lib/valgrind/vgpreload_core-amd64-linux.so
+--10104--   Considering /usr/lib/valgrind/vgpreload_core-amd64-linux.so ..
+--10104--   .. CRC mismatch (computed 4b63d83e wanted 670599e6)
+--10104--    object doesn't have a symbol table
+--10104-- Reading syms from /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so
+--10104--   Considering /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so ..
+--10104--   .. CRC mismatch (computed a4b37bee wanted 8ad4dc94)
+--10104--    object doesn't have a symbol table
+==10104== WARNING: new redirection conflicts with existing -- ignoring it
+--10104--     old: 0x0401f2f0 (strlen              ) R-> (0000.0) 0x58060901 ???
+--10104--     new: 0x0401f2f0 (strlen              ) R-> (2007.0) 0x04c32db0 strlen
+--10104-- REDIR: 0x401d360 (ld-linux-x86-64.so.2:strcmp) redirected to 0x4c33ee0 (strcmp)
+--10104-- REDIR: 0x401f830 (ld-linux-x86-64.so.2:mempcpy) redirected to 0x4c374f0 (mempcpy)
+--10104-- Reading syms from /lib/x86_64-linux-gnu/libc-2.27.so
+--10104--   Considering /lib/x86_64-linux-gnu/libc-2.27.so ..
+--10104--   .. CRC mismatch (computed b1c74187 wanted 042cc048)
+--10104--   Considering /usr/lib/debug/lib/x86_64-linux-gnu/libc-2.27.so ..
+--10104--   .. CRC is valid
+--10104-- REDIR: 0x4edac70 (libc.so.6:memmove) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9d40 (libc.so.6:strncpy) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edaf50 (libc.so.6:strcasecmp) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9790 (libc.so.6:strcat) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9d70 (libc.so.6:rindex) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edc7c0 (libc.so.6:rawmemchr) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edade0 (libc.so.6:mempcpy) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edac10 (libc.so.6:bcmp) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9d00 (libc.so.6:strncmp) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9800 (libc.so.6:strcmp) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edad40 (libc.so.6:memset) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ef80f0 (libc.so.6:wcschr) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9ca0 (libc.so.6:strnlen) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9870 (libc.so.6:strcspn) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edafa0 (libc.so.6:strncasecmp) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9840 (libc.so.6:strcpy) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edb0e0 (libc.so.6:memcpy@@GLIBC_2.14) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9da0 (libc.so.6:strpbrk) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed97c0 (libc.so.6:index) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ed9c70 (libc.so.6:strlen) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ee46c0 (libc.so.6:memrchr) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edaff0 (libc.so.6:strcasecmp_l) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edabe0 (libc.so.6:memchr) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4ef8eb0 (libc.so.6:wcslen) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4eda050 (libc.so.6:strspn) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edaf20 (libc.so.6:stpncpy) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edaef0 (libc.so.6:stpcpy) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edc7f0 (libc.so.6:strchrnul) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4edb040 (libc.so.6:strncasecmp_l) redirected to 0x4a2a6e0 (_vgnU_ifunc_wrapper)
+--10104-- REDIR: 0x4fca3c0 (libc.so.6:__strrchr_avx2) redirected to 0x4c32730 (rindex)
+--10104-- REDIR: 0x4ed3070 (libc.so.6:malloc) redirected to 0x4c2faa0 (malloc)
+--10104-- REDIR: 0x4fca1d0 (libc.so.6:__strchrnul_avx2) redirected to 0x4c37020 (strchrnul)
+--10104-- REDIR: 0x4fa5d60 (libc.so.6:__strcmp_ssse3) redirected to 0x4c33da0 (strcmp)
+--10104-- REDIR: 0x4fcaab0 (libc.so.6:__mempcpy_avx_unaligned_erms) redirected to 0x4c37130 (mempcpy)
+--10104-- REDIR: 0x4ed3950 (libc.so.6:free) redirected to 0x4c30cd0 (free)
+==10104== 
+==10104== HEAP SUMMARY:
+==10104==     in use at exit: 0 bytes in 0 blocks
+==10104==   total heap usage: 5 allocs, 5 frees, 3,128 bytes allocated
+==10104== 
+==10104== All heap blocks were freed -- no leaks are possible
+==10104== 
+==10104== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==10104== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
