@@ -7,6 +7,12 @@
 /* Utilities */
 /*************/
 
+// Prints error message and exists program
+#define ERROR(msg) { \
+    fputs(msg, stdout); \
+    exit(EXIT_FAILURE); \
+}
+
 // Custom, non type-safe, strcmp function that works nicely with the set_t interface
 int strcomp(const void* lhs, const void* rhs) {
     return strcmp((const char*) lhs, (const char*) rhs);
@@ -15,6 +21,12 @@ int strcomp(const void* lhs, const void* rhs) {
 // Custom duplication handling function for strings set that simply discards the newly inserted o
 void discard_dup(void* old_ele, void* new_ele) {
     free((char*) new_ele);
+}
+
+// Custom duplication handling function that throws an error
+// (needed for when duplicates should not be encountered)
+void disallow_duplicates(void* old_ele, void* new_ele) {
+    ERROR("ERR: Duplicates should not be allowed...\n");
 }
 
 /************************************************************************************/
@@ -55,6 +67,31 @@ set_node_t* set_node_new(void* data, set_node_t* parent) {
     result->right = NULL;
     result->data = data;
     return result;
+}
+
+// Check if given node has no children
+int node_is_leaf(const set_node_t* node) {
+    return node && node->right && node->left;
+}
+
+// Substitute a node with another
+set_node_t* node_substitute(set_node_t* to_substitute, set_node_t* to_substitute_with) {
+    if (!to_substitute) {
+        ERROR("Cannot substitute NULL node");
+    }
+
+    if (to_substitute_with) {
+        // Parent of substituted becomes of the substitute
+        to_substitute_with->parent = to_substitute->parent;
+    }
+
+    // substituted node is detached from the tree
+    to_substitute->parent = NULL;
+    to_substitute->right = NULL;
+    to_substitute->left = NULL;
+
+    // Return newly substituted node as result
+    return to_substitute_with;
 }
 
 // Create a new empty set
@@ -105,24 +142,26 @@ void node_walk(set_node_t* root, void (*func)(set_node_t**)) {
 }
 
 // Print the contents of a set in order
-void node_print(set_node_t**);
-int set_print(set_t* set) {
+void node_print(FILE*, set_node_t*);
+int set_print(FILE* out_f, set_t* set) {
     if (!set)
         return SET_ERR_NULL_SET;
 
-    printf("(");
+    fputs("(", out_f);
 
-    node_walk(set->root, &node_print);
+    node_print(out_f, set->root);
 
-    printf(")");
+    fputs(")", out_f);
 
     return SET_OK;
 }
-// Helper function to aid recursion
-void node_print(set_node_t** node) {
-    if (!node) printf("NULLREF, ");
-    if (!(*node)) printf("NULL, ");
-    else printf("%s, ", (const char*) (*node)->data);
+// Helper function to aid recursion in set_print
+void node_print(FILE* out_f, set_node_t* node) {
+    if (node) {
+        node_print(out_f, node->left);
+        fprintf(out_f, "%s, ", (char*) node->data);
+        node_print(out_f, node->right);
+    }
 }
 
 // Add an element to the set
@@ -139,8 +178,9 @@ int set_add(set_t* set, void* element) {
 }                                                   
 // Helper function to aid recursion
 //  NB. cur_parent is meant to be NULL at first call
-set_node_t* node_add(set_node_t* root, set_node_t* to_add, compfun_t comp, handle_dup_fun_t handle_dup,
-                     set_node_t* cur_parent) {
+set_node_t* node_add(set_node_t* root, set_node_t* to_add,
+        compfun_t comp, handle_dup_fun_t handle_dup,
+        set_node_t* cur_parent) {
     if (root == NULL) {
         to_add->parent = cur_parent;
         return to_add;
@@ -161,6 +201,7 @@ set_node_t* node_add(set_node_t* root, set_node_t* to_add, compfun_t comp, handl
 
 // Retrieves the specified element from a set. Returns NULL if there is no
 // such element inside the set.
+set_node_t** node_get_ref(set_node_t**, const void*, compfun_t);
 set_node_t* node_get(set_node_t*, const void*, compfun_t);
 void* set_get(set_t* set, const void* element) {
     // Search element starting from the set's root node using its associated comparison function.
@@ -174,55 +215,98 @@ void* set_get(set_t* set, const void* element) {
     // Element was found!
     return wanted_node->data;
 }
-// Helper for node_get function.
-set_node_t* node_get(set_node_t* node, const void* element, compfun_t comp) {  
-    if (node == NULL)  
-        return NULL;  
+// Helpers for node_get function.
+set_node_t** node_get_ref(set_node_t** root_ref, const void* element, compfun_t comp) {  
+    if (root_ref == NULL) {
+        ERROR("NULL ref");
+    }
 
-    int comp_result = comp(element, node->data);
+    set_node_t* root = *root_ref;
+
+    int comp_result = comp(element, root->data);
     if (comp_result == 0)  
-        return node;
+        return root_ref;
     else if (comp_result < 0)
-        return node_get(node->left, element, comp);
+        return node_get_ref(&(root->left), element, comp);
     else
-        return node_get(node->right, element, comp);
+        return node_get_ref(&(root->right), element, comp);
+}
+set_node_t* node_get(set_node_t* root, const void* element, compfun_t comp) {
+    // TODO: Optimization chance: unnecessary ref/deref could be removed by allowing some code duplication.
+    return *(node_get_ref(&root, element, comp));
 }
 
-/****************************************************************************/
-/* //                                                                       */
-/* void node_union(set_node_t* lhs, set_node_t** rhs, compfun_t comp) {     */
-/*     if (lhs) {                                                           */
-/*         node_add(&rhs, lhs, comp, &disallow_duplicates, NULL);           */
-/*         node_union(lhs->left, rhs, comp);                                */
-/*         node_union(lhs->right, rhs, comp);                               */
-/*     }                                                                    */
-/* }                                                                        */
-/*                                                                          */
-/* // Remove an element from a given set and return it                      */
-/* set_node_t** node_remove(set_node_t**);                                  */
-/* void set_remove(set_t* set, void* ele_to_remove) {                       */
-/*     // remove and free memory of node                                    */
-/*     node_remove(&(node_get(set->root, ele_to_remove, set->comp)));       */
-/* }                                                                        */
-/* set_node_t* node_remove(set_node_t* to_remove) {                         */
-/*     // NB. the choice of the substitute node is albitrary                */
-/*     // TODO: optimization opportunity                                    */
-/*     set_node_t* substitute = to_remove->left;                            */
-/*                                                                          */
-/*     substitute->right = node_union(substitute->right, to_remove->right); */
-/*     node_rewire(to_remove, substitute);                                  */
-/*                                                                          */
-/*     return to_remove;                                                    */
-/* }                                                                        */
-/****************************************************************************/
+// Performs the union of @from into @into
+//  NB. @from parameter might be destroyed
+void node_inplace_union(set_node_t** into_ref, set_node_t* from, compfun_t comp) {
+    if (!into_ref)
+        ERROR("ERR: null pointer reference\n");
 
+    set_node_t* into = *into_ref;
+
+    if (!into) {
+        *into_ref = from;
+        return;
+    }
+
+    if (from) {
+        node_inplace_union(into_ref, from->left, comp);
+        node_inplace_union(into_ref, from->right, comp);
+        *into_ref = node_add(into, set_node_new(from->data, NULL), comp, &disallow_duplicates, NULL);
+    }
+}                                                                        
+
+// Remove an element from a given set and return it
+set_node_t* node_remove(set_node_t*, compfun_t comp);
+void set_remove(set_t* set, void* ele_to_remove) {
+    set_node_t** node_to_remove_ref = node_get_ref(&(set->root), ele_to_remove, set->comp);
+
+    set_node_t* removed_node = *node_to_remove_ref;
+    *node_to_remove_ref = node_remove(*node_to_remove_ref, set->comp);
+    node_free(removed_node);
+}
+set_node_t* node_remove(set_node_t* to_remove, compfun_t comp) {
+    if (!to_remove) {
+        ERROR("Cannot remove null node");
+    }
+
+    // NB. the choice of the substitute node is albitrary
+    // TODO: optimization opportunity
+    set_node_t* substitute = NULL;
+    set_node_t* overlapping = NULL;
+    if (to_remove->right) {
+        substitute = to_remove->right;
+        overlapping = to_remove->left;
+    } else if (to_remove->left) {
+        substitute = to_remove->left;
+        overlapping = to_remove->right;
+    }
+
+    if (overlapping) {
+        node_inplace_union(&overlapping, substitute, comp);
+        substitute->right = NULL;
+    }
+
+    return node_substitute(to_remove, substitute);
+}
 
 /********/
 /* Main */
 /********/
-int main() {
+int main(int argc, char** argv) {
+    // Check if command was well formed
+    if (argc < 3)
+        puts("Please provide input and output files as arguments");
+    if (argc > 3)
+        puts("Too many arguments provided!");
+
+    // Open files specified in first arguments
+    FILE* in_f = fopen(argv[1], "r");
+    FILE* out_f = fopen(argv[2], "w");
+
     // All of apinet's entities
-    set_t* set = set_empty(&strcomp, &discard_dup);
+    set_t* set  = set_empty(&strcomp, &discard_dup);
+    set_t* set1 = set_empty(&strcomp, &discard_dup);
 
     // All of apinet's relations
     // TODO: set_t* relations = ...;
@@ -231,17 +315,26 @@ int main() {
     char command[1024];
     while (1) {
         // Read first section of command from user
-        printf("> ");
-        scanf("%s", command);
+        fscanf(in_f, "%s", command);
 
         if (strcmp(command, "add") == 0) {
             char* to_add = malloc(sizeof(char) * 1024);
-            scanf("%s", to_add);
+            fscanf(in_f, "%s", to_add);
             set_add(set, (void*) to_add);
+        } else if (strcmp(command, "remove") == 0) {
+            char to_remove[1024];
+            fscanf(in_f, "%s", to_remove);
+            set_remove(set, (void*) to_remove);
+        } else if (strcmp(command, "union") == 0) {
+            node_inplace_union(&(set->root), set1->root, &strcomp);
+        } else if (strcmp(command, "add1") == 0) {
+            char* to_add = malloc(sizeof(char) * 1024);
+            fscanf(in_f, "%s", to_add);
+            set_add(set1, (void*) to_add);
         } else if (strcmp(command, "get") == 0) {
             // retrieve string to get
             char* to_get = malloc(sizeof(char) * 1024);
-            scanf("%s", to_get);
+            fscanf(in_f, "%s", to_get);
 
             // get it
             void* result = set_get(set, (void*) to_get);
@@ -252,14 +345,21 @@ int main() {
             else 
                 puts((const char*) result);
         } else if (strcmp(command, "print") == 0) {
-            set_print(set);
-            printf("\n");
+            set_print(out_f, set);
+            fprintf(out_f, "\n");
+        } else if (strcmp(command, "print1") == 0) {
+            set_print(out_f, set1);
+            fprintf(out_f, "\n");
         } else if (strcmp(command, "quit") == 0) {
             break;
         }
     }
 
     set_free(set); 
+    set_free(set1); 
+
+    fclose(in_f);
+    fclose(out_f);
 
     return 0;
 }

@@ -1,0 +1,12 @@
+add a
+add b
+add c
+print
+
+remove b
+remove c
+remove a
+
+print
+
+quit
