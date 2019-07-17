@@ -13,22 +13,6 @@
     exit(EXIT_FAILURE); \
 }
 
-// Custom, non type-safe, strcmp function that works nicely with the set_t interface
-int strcomp(const void* lhs, const void* rhs) {
-    return strcmp((const char*) lhs, (const char*) rhs);
-}
-
-// Custom duplication handling function for strings set that simply discards the newly inserted o
-void discard_dup(void* old_ele, void* new_ele) {
-    free((char*) new_ele);
-}
-
-// Custom duplication handling function that throws an error
-// (needed for when duplicates should not be encountered)
-void disallow_duplicates(void* old_ele, void* new_ele) {
-    ERROR("ERR: Duplicates should not be allowed...\n");
-}
-
 /************************************************************************************/
 /* Generic set datastructure. Implemented using a BST. Also used to represent sets. */
 /************************************************************************************/
@@ -38,11 +22,30 @@ void disallow_duplicates(void* old_ele, void* new_ele) {
 #define SET_ERR_NULL_SET 1
 #define SET_ERR_NULL_ELE 2
 
+#define SET_INSERTION_FAILED 3
+
+// Custom, non type-safe, strcmp function that works nicely with the set_t interface
+int strcomp(const void* lhs, const void* rhs) {
+    return strcmp((const char*) lhs, (const char*) rhs);
+}
+
+// Custom duplication handling function for strings set that simply discards the newly inserted o
+int discard_dup(void* old_ele, void* new_ele) {
+    return SET_INSERTION_FAILED;
+}
+
+// Custom duplication handling function that throws an error
+// (needed for when duplicates should not be encountered)
+int disallow_duplicates(void* old_ele, void* new_ele) {
+    ERROR("Duplicates should are not allowed here.\n");
+    return SET_INSERTION_FAILED;
+}
+
 // Function type used to customize set ordering
 typedef int (*compfun_t)(const void* lhs, const void* rhs);
 
 // Function type used to customize set duplicate handling
-typedef void (*handle_dup_fun_t)(void* old, void* new);
+typedef int (*handle_dup_fun_t)(void* old, void* new);
 
 // Node type
 typedef struct _set_node_t {
@@ -74,30 +77,6 @@ int node_is_leaf(const set_node_t* node) {
     return node && node->right && node->left;
 }
 
-// Substitute a node with another
-set_node_t* node_substitute(set_node_t* to_substitute, set_node_t* to_substitute_with) {
-    if (!to_substitute) {
-        ERROR("Cannot substitute NULL node");
-    }
-
-    if (to_substitute_with) {
-        // Parent of substituted becomes of the substitute
-        to_substitute_with->parent = to_substitute->parent;
-
-        // Same with left and right
-        to_substitute_with->left = to_substitute->left;
-        to_substitute_with->right = to_substitute->right;
-    }
-
-    // substituted node is detached from the tree
-    to_substitute->parent = NULL;
-    to_substitute->right = NULL;
-    to_substitute->left = NULL;
-
-    // Return newly substituted node as result
-    return to_substitute_with;
-}
-
 // Create a new empty set
 set_t* set_empty(compfun_t comp, handle_dup_fun_t handle_dup) {
     set_t* result = malloc(sizeof(set_t));
@@ -121,11 +100,11 @@ int set_free(set_t* set) {
 void node_free(set_node_t* node) {
     if (node) {
         // Free data the node contains.
-        free(node->data); node->data = NULL;
+        free(node->data);
 
         // Recursively free left and right nodes
-        node_free(node->left); node->left = NULL;
-        node_free(node->right); node->right = NULL;
+        node_free(node->left);
+        node_free(node->right);
 
         // Free memory occupied by node structure itself
         free(node);
@@ -169,7 +148,7 @@ void node_print(FILE* out_f, set_node_t* node) {
 }
 
 // Insert element at rightmost node 
-set_node_t* node_add(set_node_t*, set_node_t*, compfun_t comp, handle_dup_fun_t, set_node_t*);
+int node_add(set_node_t**, set_node_t*, compfun_t comp, handle_dup_fun_t, set_node_t*);
 void node_insert_at_rightmost(set_node_t** root, set_node_t* to_insert) {
     if (root == NULL) {
         ERROR("Null pointer ref");
@@ -205,30 +184,43 @@ int set_add(set_t* set, void* element) {
     if (set == NULL)
         return SET_ERR_NULL_SET;
 
-    set->root = node_add(set->root, set_node_new(element, NULL), set->comp, set->handle_dup, NULL);
+    set_node_t* node_to_add = set_node_new(element, NULL);
+    int result = node_add(&(set->root), node_to_add, set->comp, set->handle_dup, NULL);
+
+    if (result == SET_INSERTION_FAILED) {
+        // TODO: Optimization opportunity: do not do this free
+        node_free(node_to_add);
+        return SET_INSERTION_FAILED;
+    }
 
     return SET_OK;
 }                                                   
 // Helper function to aid recursion
 //  NB. cur_parent is meant to be NULL at first call
-set_node_t* node_add(set_node_t* root, set_node_t* to_add,
+int node_add(set_node_t** root_ref, set_node_t* to_add,
         compfun_t comp, handle_dup_fun_t handle_dup,
         set_node_t* cur_parent) {
+    if (root_ref == NULL) {
+        ERROR("Null pointer ref");
+    }
+
+    set_node_t* root = *root_ref;
+
     if (root == NULL) {
         to_add->parent = cur_parent;
-        return to_add;
+        *root_ref = to_add;
+        return SET_OK;
     } else {
         void* comped_ele = root->data;
         void* element_to_add = to_add->data;
         int comp_res = comp(element_to_add, comped_ele);
         if (comp_res == 0) {
-            handle_dup(comped_ele, element_to_add);
+            return handle_dup(comped_ele, element_to_add);
         } else if (comp_res < 0) {
-            root->left = node_add(root->left, to_add, comp, handle_dup, root);
+            return node_add(&(root->left), to_add, comp, handle_dup, root);
         } else {
-            root->right = node_add(root->right, to_add, comp, handle_dup, root);
+            return node_add(&(root->right), to_add, comp, handle_dup, root);
         }
-        return root;
     }
 }
 
@@ -268,26 +260,6 @@ set_node_t* node_get(set_node_t* root, const void* element, compfun_t comp) {
     // TODO: Optimization chance: unnecessary ref/deref could be removed by allowing some code duplication.
     return *(node_get_ref(&root, element, comp));
 }
-
-// Performs the union of @from into @into
-//  NB. @from parameter might be destroyed
-void node_inplace_union(set_node_t** into_ref, set_node_t* from, compfun_t comp) {
-    if (!into_ref)
-        ERROR("ERR: null pointer reference\n");
-
-    set_node_t* into = *into_ref;
-
-    if (!into) {
-        *into_ref = from;
-        return;
-    }
-
-    if (from) {
-        node_inplace_union(into_ref, from->left, comp);
-        node_inplace_union(into_ref, from->right, comp);
-        *into_ref = node_add(into, set_node_new(from->data, NULL), comp, &disallow_duplicates, NULL);
-    }
-}                                                                        
 
 // Remove an element from a given set and return it
 set_node_t* node_remove(set_node_t**, compfun_t comp);
@@ -389,8 +361,6 @@ int main(int argc, char** argv) {
             char to_remove[1024];
             fscanf(in_f, "%s", to_remove);
             set_remove(set, (void*) to_remove);
-        } else if (strcmp(command, "union") == 0) {
-            node_inplace_union(&(set->root), set1->root, &strcomp);
         } else if (strcmp(command, "add1") == 0) {
             char* to_add = malloc(sizeof(char) * 1024);
             fscanf(in_f, "%s", to_add);
