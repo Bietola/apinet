@@ -299,11 +299,41 @@ void set_remove(set_t* set, void* ele_to_remove) {
             )
         );
 }
-set_node_t* node_remove_impl(
-        set_node_t** to_remove,
-        set_node_t* substitute,
-        set_node_t** overlapping_top, set_node_t** overlapping_bottom,
-        set_node_t** to_shift) {
+set_node_t* node_remove(set_node_t** to_remove_ref, compfun_t comp) {
+    if (!to_remove_ref) {
+        ERROR("Null pointer ref");
+    }
+
+    set_node_t* to_remove = *to_remove_ref;                           
+
+    if (!to_remove) {                                                 
+        ERROR("Cannot remove null node");                             
+    }                                                                 
+
+    // Get correct information                                        
+    // TODO: optimization opportunity: do not choose tree albitrarily 
+    set_node_t* substitute = NULL;                                    
+    set_node_t** overlapping_top = NULL;                              
+    set_node_t** overlapping_bottom = NULL;                           
+    set_node_t** to_shift = NULL;                                     
+    void (*overlap_insert)(set_node_t**, set_node_t*) = NULL;         
+    if (to_remove->right) {                                           
+        substitute = to_remove->right;                                
+        overlapping_top = &(to_remove->left);                         
+        if (substitute) {                                             
+            to_shift = &(substitute->right);                          
+            overlapping_bottom = &(substitute->left);                 
+        }                                                             
+        overlap_insert = &node_insert_at_leftmost;                    
+    } else {                                                          
+        substitute = to_remove->left;                                 
+        overlapping_top = &(to_remove->right);                        
+        if (substitute) {                                             
+            overlapping_bottom = &(substitute->right);                
+            to_shift = &(substitute->left);                           
+        }                                                             
+        overlap_insert = &node_insert_at_rightmost;                   
+    }                                                                 
 
     if (substitute) {
         // Handle overlap
@@ -322,63 +352,6 @@ set_node_t* node_remove_impl(
     to_remove->left = NULL;
     to_remove->right = NULL;
     return to_remove;
-}
-set_node_t* node_remove(set_node_t** to_remove_ref, compfun_t comp) {
-    if (!to_remove_ref) {
-        ERROR("Null pointer ref");
-    }
-
-    if (to_remove->right) {
-        node_remove_impl(
-                to_remove_ref,
-                &get_right,              // substitute
-                &get_left, &get_right,   // overlapping_top, overlapping_bottom
-                &get_left,               // to_shift
-                &node_insert_at_leftmost // overlap_insert
-        );
-    } else {
-        node_remove_impl(
-                to_remove_ref,
-                &get_left,                // substitute
-                &get_right, &get_left,    // overlapping_top, overlapping_bottom
-                &get_right,               // to_shift
-                &node_insert_at_rightmost // overlap_insert
-        );
-    }
-
-    /*********************************************************************/
-    /* set_node_t* to_remove = *to_remove_ref;                           */
-    /*                                                                   */
-    /* if (!to_remove) {                                                 */
-    /*     ERROR("Cannot remove null node");                             */
-    /* }                                                                 */
-    /*                                                                   */
-    /* // Get correct information                                        */
-    /* // TODO: optimization opportunity: do not choose tree albitrarily */
-    /* set_node_t* substitute = NULL;                                    */
-    /* set_node_t** overlapping_top = NULL;                              */
-    /* set_node_t** overlapping_bottom = NULL;                           */
-    /* set_node_t** to_shift = NULL;                                     */
-    /* void (*overlap_insert)(set_node_t**, set_node_t*) = NULL;         */
-    /* if (to_remove->right) {                                           */
-    /*     substitute = to_remove->right;                                */
-    /*     overlapping_top = &(to_remove->left);                         */
-    /*     if (substitute) {                                             */
-    /*         to_shift = &(substitute->right);                          */
-    /*         overlapping_bottom = &(substitute->left);                 */
-    /*     }                                                             */
-    /*     overlap_insert = &node_insert_at_leftmost;                    */
-    /* } else {                                                          */
-    /*     substitute = to_remove->left;                                 */
-    /*     overlapping_top = &(to_remove->right);                        */
-    /*     if (substitute) {                                             */
-    /*         overlapping_bottom = &(substitute->right);                */
-    /*         to_shift = &(substitute->left);                           */
-    /*     }                                                             */
-    /*     overlap_insert = &node_insert_at_rightmost;                   */
-    /* }                                                                 */
-    /*********************************************************************/
-
 }
 
 /********/
