@@ -1,11 +1,13 @@
 add a
-add b
+add e
 add c
+add b
+add d
+add z
+
 print
 
-remove b
-remove c
-remove a
+remove e
 
 print
 
