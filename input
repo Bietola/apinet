@@ -1,45 +1,53 @@
-add a
-add e
-add e
-add e
-add e
-add c
-add c
-add c
-add c
-add c
-add b
-add j
-add j
-add j
-add d
-add z
-add z
-add z
-add z
-add j
-add j
-add j
-add j
-add k
-add k
-add k
-add k
-add l
+addent a
+addent e
+addent e
+addent e
+addent e
+addent c
+addent c
+addent c
+addent c
+addent c
+addent b
+addent j
+addent j
+addent j
+addent d
+addent z
+addent z
+addent z
+addent z
+addent j
+addent j
+addent j
+addent j
+addent k
+addent k
+addent k
+addent k
+addent l
 
-print
+pent
 
-remove e
-remove a
-remove b
-remove d
-remove c
-remove j
-remove k
-remove l
-remove z
-remove z
+delent e
+delent a
+delent b
+delent d
+delent c
+delent j
+delent j
+delent hello_there
+delent j
+delent j
+delent k
+delent l
+delent z
+delent z
+delent z
+delent z
+delent z
+delent z
 
-print
+pent
 
 quit

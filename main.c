@@ -21,7 +21,6 @@
 #define SET_OK           0
 #define SET_ERR_NULL_SET 1
 #define SET_ERR_NULL_ELE 2
-
 #define SET_INSERTION_FAILED 3
 
 // Custom, non type-safe, strcmp function that works nicely with the set_t interface
@@ -243,10 +242,14 @@ void* set_get(set_t* set, const void* element) {
 // Helpers for node_get function.
 set_node_t** node_get_ref(set_node_t** root_ref, const void* element, compfun_t comp) {  
     if (root_ref == NULL) {
-        ERROR("NULL ref");
+        ERROR("NULL pointer ref");
     }
 
     set_node_t* root = *root_ref;
+
+    if (!root) {
+        return NULL;
+    }
 
     int comp_result = comp(element, root->data);
     if (comp_result == 0)  
@@ -273,14 +276,10 @@ void set_remove(set_t* set, void* ele_to_remove) {
 }
 set_node_t* node_remove(set_node_t** to_remove_ref, compfun_t comp) {
     if (!to_remove_ref) {
-        ERROR("Null pointer ref");
+        return NULL;
     }
 
     set_node_t* to_remove = *to_remove_ref;                           
-
-    if (!to_remove) {                                                 
-        ERROR("Cannot remove null node");                             
-    }                                                                 
 
     // Get correct information                                        
     // TODO: optimization opportunity: do not choose tree albitrarily 
@@ -326,74 +325,123 @@ set_node_t* node_remove(set_node_t** to_remove_ref, compfun_t comp) {
     return to_remove;
 }
 
+/**********************************************/
+/* Helper functions for handling program flow */
+/**********************************************/
+// Config constants
+#define DEBUG_ON  0
+#define DEBUG_OFF 1
+
+// Entity config constants
+#define ENT_NAME_BUF_LEN 100
+
+// Configure progam
+void configure(int argc, char** argv, FILE** in_f, FILE** out_f, int* debug_mode) {
+    // Set input file
+    if (argc > 1) *in_f = fopen(argv[1], "r");
+    else *in_f = stdin;
+
+    // Set output file
+    if (argc > 2) *out_f = fopen(argv[2], "w");
+    else *out_f = stdout;
+
+    // Set debug mode
+    if (argc > 3 && strcmp(argv[3], "db") == 0) *debug_mode = DEBUG_OFF;
+    else *debug_mode = DEBUG_ON;
+}
+
+// Initialize empty entity storage
+set_t* initialize_entities() {
+    return set_empty(&strcomp, &discard_dup);
+}
+
+// Initialize empty relations storage
+set_t* initialize_relations() {
+    // TODO: implement
+    return NULL;
+}
+
+
 /********/
 /* Main */
 /********/
 int main(int argc, char** argv) {
-    // Check if command was well formed
-    if (argc < 3)
-        puts("Please provide input and output files as arguments");
-    if (argc > 3)
-        puts("Too many arguments provided!");
+    // Configure program
+    FILE* in_f;
+    FILE* out_f;
+    int debug_mode;
+    configure(argc, argv, &in_f, &out_f, &debug_mode);
 
-    // Open files specified in first arguments
-    FILE* in_f = fopen(argv[1], "r");
-    FILE* out_f = fopen(argv[2], "w");
-
-    // All of apinet's entities
-    set_t* set  = set_empty(&strcomp, &discard_dup);
-    set_t* set1 = set_empty(&strcomp, &discard_dup);
-
-    // All of apinet's relations
-    // TODO: set_t* relations = ...;
+    // Initialize apinet storage
+    set_t* entities = initialize_entities();
+    set_t* relations = initialize_relations();
 
     // User interaction loop
     char command[1024];
     while (1) {
-        // Read first section of command from user
+        // Read head of command from user
         fscanf(in_f, "%s", command);
 
-        if (strcmp(command, "add") == 0) {
-            char* to_add = malloc(sizeof(char) * 1024);
+        // Process head of command
+        if (strcmp(command, "addent") == 0) {
+            // Allocate space for entity name
+            char* to_add = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+
+            // Parse second command argument as entity name
             fscanf(in_f, "%s", to_add);
-            set_add(set, (void*) to_add);
-        } else if (strcmp(command, "remove") == 0) {
-            char to_remove[1024];
+
+            // Add entity to set
+            set_add(entities, (void*) to_add);
+
+        } else if (strcmp(command, "delent") == 0) {
+            // Get name of entity to remove from first command argument
+            char to_remove[ENT_NAME_BUF_LEN];
             fscanf(in_f, "%s", to_remove);
-            set_remove(set, (void*) to_remove);
-        } else if (strcmp(command, "add1") == 0) {
-            char* to_add = malloc(sizeof(char) * 1024);
-            fscanf(in_f, "%s", to_add);
-            set_add(set1, (void*) to_add);
-        } else if (strcmp(command, "get") == 0) {
-            // retrieve string to get
-            char* to_get = malloc(sizeof(char) * 1024);
-            fscanf(in_f, "%s", to_get);
 
-            // get it
-            void* result = set_get(set, (void*) to_get);
+            // Perform removal
+            set_remove(entities, (void*) to_remove);
 
-            // print the result as a string if present
-            if (result == NULL)
-                puts("NOT PRESENT!");
-            else 
-                puts((const char*) result);
-        } else if (strcmp(command, "print") == 0) {
-            set_print(out_f, set);
-            fprintf(out_f, "\n");
-        } else if (strcmp(command, "print1") == 0) {
-            set_print(out_f, set1);
-            fprintf(out_f, "\n");
-        } else if (strcmp(command, "quit") == 0) {
-            break;
+        // Debug mode only commands
+        } else if (debug_mode == DEBUG_ON) {
+            if (strcmp(command, "gent") == 0) {
+                // Retrieve string to get
+                char to_get[ENT_NAME_BUF_LEN];
+                fscanf(in_f, "%s", to_get);
+
+                // Get it
+                void* result = set_get(entities, (void*) to_get);
+
+                // Print the result as a string if present
+                if (result == NULL)
+                    puts("NOT PRESENT!");
+                else 
+                    puts((const char*) result);
+
+            } else if (strcmp(command, "pent") == 0) {
+                set_print(out_f, entities);
+                fprintf(out_f, "\n");
+
+            } else if (strcmp(command, "quit") == 0) {
+                break;
+            } else {
+                goto invalid_command;
+            }
+        } else {
+            invalid_command: {
+                                 printf("Unrecognized command: %s", command);
+                                 exit(EXIT_FAILURE);
+                             }
         }
+
     }
 
-    set_free(set); 
-    set_free(set1); 
+    // Deallocate entity set
+    set_free(entities);
 
-    fclose(in_f);
-    fclose(out_f);
+    // Close streams if necessary
+    if (in_f != stdin)   fclose(in_f);
+    if (out_f != stdout) fclose(out_f);
 
+    // Exit
     return 0;
 }
