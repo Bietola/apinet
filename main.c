@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <assert.h>
 
 // Constants returned as part of set mechanisms
@@ -19,13 +20,23 @@
     exit(EXIT_FAILURE); \
 }
 
+// Fucntion that doesn't do anything...
+void do_nothing(void* _) {
+    ;
+}
+
 
 /************************************************************************************/
 /* Generic set datastructure. Implemented using a BST. Also used to represent sets. */
 /************************************************************************************/
-// Custom, non type-safe, strcmp function that works nicely with the set_t interface
+// Custom strcmp function to be used in map_t
 int strcomp(const void* lhs, const void* rhs) {
     return strcmp((const char*) lhs, (const char*) rhs);
+}
+
+// Function that compares integer used in map_t
+int intcmp(const void* lhs, const void* rhs) {
+    return (intptr_t) lhs < (intptr_t) rhs;
 }
 
 // Custom duplication handling function for strings set that simply discards the newly inserted o
@@ -49,8 +60,12 @@ typedef int (*handle_dup_fun_t)(void* old, void* new);
 // Function type used to customize element deallocation
 typedef void (*free_element_fun_t) (void* to_free);
 
+// Function type used to customize element deallocation
+typedef void (*free_key_fun_t) (void* to_free);
+
 // Node type
 typedef struct _set_node_t {
+    const char* key;
     void* data;
     struct _set_node_t* parent;
     struct _set_node_t* left;
@@ -63,14 +78,16 @@ typedef struct _set_t {
     compfun_t comp;
     handle_dup_fun_t handle_dup;
     free_element_fun_t free_element;
+    free_key_fun_t free_key;
 } set_t;
 
 // Create a new node with no children
-set_node_t* set_node_new(void* data, set_node_t* parent) {
+set_node_t* set_node_new(const char* key, void* data, set_node_t* parent) {
     set_node_t* result = malloc(sizeof(set_node_t));
     result->parent = parent;
     result->left = NULL;
     result->right = NULL;
+    result->key = key;
     result->data = data;
     return result;
 }
@@ -81,50 +98,45 @@ int node_is_leaf(const set_node_t* node) {
 }
 
 // Create a new empty set
-set_t* set_empty(compfun_t comp, handle_dup_fun_t handle_dup, free_element_fun_t free_element) {
+set_t* set_empty(compfun_t comp, handle_dup_fun_t handle_dup, free_key_fun_t free_key, free_element_fun_t free_element) {
     set_t* result = malloc(sizeof(set_t));
     result->root = NULL;
     result->comp = comp;
     result->handle_dup = handle_dup;
+    result->free_key = free_key;
     result->free_element = free_element;
     return result;
 }
 
-// Free memory allocated by given set
-void node_free(set_node_t*, free_element_fun_t);
+// Various ways of freeing memory allocated by given set
+void node_free(set_node_t*, free_key_fun_t, free_element_fun_t);
 int set_free(set_t* set) {
     if (!set)
         return SET_ERR_NULL_SET;
 
-    node_free(set->root, set->free_element); set->root = NULL;
+    node_free(set->root, set->free_key, set->free_element); set->root = NULL;
     free(set);
 
     return SET_OK;
 }
-void node_free(set_node_t* node, free_element_fun_t free_ele) {
+void set_vfree(void* set) {
+    int result = set_free((set_t*) set);
+    if (result != SET_OK) {
+        ERROR("Encountered error in freeing set!");
+    }
+}
+void node_free(set_node_t* node, free_key_fun_t free_key, free_element_fun_t free_ele) {
     if (node) {
         // Free data the node contains.
+        free_key((char*)node->key);
         free_ele(node->data);
 
         // Recursively free left and right nodes
-        node_free(node->left, free_ele);
-        node_free(node->right, free_ele);
+        node_free(node->left, free_key, free_ele);
+        node_free(node->right, free_key, free_ele);
 
         // Free memory occupied by node structure itself
         free(node);
-    }
-}
-
-// Apply a given function to all nodes in the set
-void node_walk(set_node_t* root, void (*func)(set_node_t**)) {
-    if (root) {
-        if (root->left)
-            node_walk(root->left, func);
-
-        func(&root);
-
-        if (root->right)
-            node_walk(root->right, func);
     }
 }
 
@@ -146,7 +158,8 @@ int set_print(FILE* out_f, set_t* set) {
 void node_print(FILE* out_f, set_node_t* node) {
     if (node) {
         node_print(out_f, node->left);
-        fprintf(out_f, "%s, ", (char*) node->data);
+        // TODO: use custom printers
+        fprintf(out_f, "(%s: %s), ", (char*) node->key, (char*) node->data);
         node_print(out_f, node->right);
     }
 }
@@ -182,18 +195,18 @@ void node_insert_at_leftmost(set_node_t** root, set_node_t* to_insert) {
 
 
 // Add an element to the set
-int set_add(set_t* set, void* element) {
+int set_add(set_t* set, const void* key, void* element) {
     if (element == NULL)                            
         return SET_ERR_NULL_ELE;                    
     if (set == NULL)
         return SET_ERR_NULL_SET;
 
-    set_node_t* node_to_add = set_node_new(element, NULL);
+    set_node_t* node_to_add = set_node_new(key, element, NULL);
     int result = node_add(&(set->root), node_to_add, set->comp, set->handle_dup, NULL);
 
     if (result == SET_INSERTION_FAILED) {
         // TODO: Optimization opportunity: do not do this free
-        node_free(node_to_add, set->free_element);
+        node_free(node_to_add, set->free_key, set->free_element);
         return SET_INSERTION_FAILED;
     }
 
@@ -277,6 +290,7 @@ void set_remove(set_t* set, void* ele_to_remove) {
                 node_get_ref(&(set->root), ele_to_remove, set->comp),
                 set->comp
             ),
+            set->free_key,
             set->free_element
         );
 }
@@ -374,22 +388,13 @@ void rxing_ent_info_free(void* to_free_v) {
 }
 
 typedef struct relinfo_t_ {
-    char* id;
     set_t* rxing_ents_set;    // set of rxing_ent_info
     set_t* rxing_amounts_set; // set of rxing_amount_info
 } relinfo_t;
-// Custom compare function for relinfo type (used in sets)
-int relinfo_comp(const void* lhs, const void* rhs) {
-    const char* lhs_id = ((relinfo_t*) lhs)->id;
-    const char* rhs_id = ((relinfo_t*) rhs)->id;
-
-    return strcmp(lhs_id, rhs_id);
-}
 // Custom free function
 void relinfo_free(void* to_free_v) {
     relinfo_t* to_free = (relinfo_t*) to_free_v;
 
-    free(to_free->id);
     set_free(to_free->rxing_ents_set);
     set_free(to_free->rxing_amounts_set);
 
@@ -397,13 +402,53 @@ void relinfo_free(void* to_free_v) {
 }
 
 // Allocate new relinfo
-relinfo_t* relinfo_new(char* rel_id, char* tx_ent, char* rx_ent) {
+relinfo_t* relinfo_new(char* tx_ent, char* rx_ent) {
     relinfo_t* result = malloc(sizeof(relinfo_t));
-    result->id = rel_id;
-    result->rxing_ents_set = set_empty(&rxing_ent_info_comp, &disallow_duplicates, &rxing_ent_info_free);
-    result->rxing_amounts_set = set_empty(&rxing_amount_info_comp, &disallow_duplicates, &rxing_amount_info_free);
+    result->rxing_ents_set = set_empty(&strcomp, &disallow_duplicates, &free, &set_vfree);
+    result->rxing_amounts_set = set_empty(&strcomp, &disallow_duplicates, &free, &set_vfree);
 
     return result;
+}
+
+/*******************************************/
+/* Helper functions for handling relations */
+/*******************************************/
+void rel_add(set_t* /* of relinfo_t */ relations,
+             const char* txing_ent, const char* rxing_ent, const char* rel_id) {
+    NULLCHECK(relations, txing_ent, rxing_ent, rel_id);
+
+    int result = set_add_if_none(relations, txing_ent, FAC_GET());
+    if (result == )
+
+    /*************************************************************************************************************/
+    /* // If past relinfo with requested rel_id is already there, we check if the added relation is a duplicate. */
+    /* //                                                                                                        */
+    /* // Also this is check is done to insert partial info of relinfo into an already existing one, minimizing  */
+    /* // dynamic allocations.                                                                                   */
+    /* relinfo_t** old_relinfo_ref = (relinfo_t**) set_get_ref(relations, rel_id);                               */
+    /* relinfo_t* old_relinfo = *old_relinfo_ref;                                                                */
+    /* if (old_relinfo) {                                                                                        */
+    /*     {                                                                                                     */
+    /*         // Analogous to checking presence of relinfo                                                      */
+    /*         set_t* old_txing_ents = (set_t*) set_get(                                                         */
+    /*                 old_relinfo->rxing_ents_set // TODO                                                       */
+    /*                 rxing_ent                   // TODO                                                       */
+    /*         );                                                                                                */
+    /*         if (old_txing_ents) {                                                                             */
+    /*             // If the txing ent already exists, the handle_dup funptr of old_txing_ent will handle it     */
+    /*             SET_FORCE_OK(set_add(old_txing_ents, txing_ent, txing_ent));                                  */
+    /*         } else {                                                                                          */
+    /*             // Allocate new set                                                                           */
+    /*             *old_txing_ents = set_single_str_set(&disallow_duplicates, txing_ent);                        */
+    /*         }                                                                                                 */
+    /*     }                                                                                                     */
+    /*                                                                                                           */
+    /*     set_t* rxint_amounts_set = (set_t*) old_relinfo->rxing_amounts_set;                                   */
+    /* } else {                                                                                                  */
+    /*     // Allocate new relinfo                                                                               */
+    /*     *old_relinfo_ref =                                                                                    */
+    /* }                                                                                                         */
+    /*************************************************************************************************************/
 }
 
 /**********************************************/
@@ -434,12 +479,12 @@ void configure(int argc, char** argv, FILE** in_f, FILE** out_f, int* debug_mode
 
 // Initialize empty entity storage
 set_t* initialize_entities() {
-    return set_empty(&strcomp, &discard_dup, &free);
+    return set_empty(&strcomp, &discard_dup, &free, &do_nothing);
 }
 
 // Initialize empty relations storage
 set_t* initialize_relations() {
-    return set_empty(&relinfo_comp, &disallow_duplicates, &relinfo_free);
+    return set_empty(&strcomp, &disallow_duplicates, &free, &relinfo_free);
 }
 
 /********/
@@ -465,13 +510,13 @@ int main(int argc, char** argv) {
         // Process head of command
         if (strcmp(command, "addent") == 0) {
             // Allocate space for entity name
-            char* to_add = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+            const char* to_add = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
 
             // Parse second command argument as entity name
-            fscanf(in_f, "%s", to_add);
+            fscanf(in_f, "%s", (char*) to_add);
 
             // Add entity to set
-            set_add(entities, (void*) to_add);
+            set_add(entities, (const void*) to_add, (void*) to_add);
 
         } else if (strcmp(command, "delent") == 0) {
             // Get name of entity to remove from first command argument
@@ -483,19 +528,19 @@ int main(int argc, char** argv) {
 
         } else if (strcmp(command, "addrel") == 0) {
             // Get name of txing entity
-            char* txing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
-            fscanf(in_f, "%s", txing_ent);
+            const char* txing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+            fscanf(in_f, "%s", (char*) txing_ent);
 
             // Get name of rxing entity
-            char* rxing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
-            fscanf(in_f, "%s", rxing_ent);
+            const char* rxing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+            fscanf(in_f, "%s", (char*) rxing_ent);
 
             // Get name of relation
-            char* relation = malloc(sizeof(char) * REL_NAME_BUF_LEN);
-            fscanf(in_f, "%s", relation);
+            const char* relation = malloc(sizeof(char) * REL_NAME_BUF_LEN);
+            fscanf(in_f, "%s", (char*) relation);
 
-            // Perform insertion
-            set_add(relations, relinfo_new(relation, txing_ent, rxing_ent));
+            // Add relation
+            rel_add(relations, txing_ent, rxing_ent, relation);
 
         // Debug mode only commands
         } else if (debug_mode == DEBUG_ON) {
