@@ -3,6 +3,12 @@
 #include <string.h>
 #include <assert.h>
 
+// Constants returned as part of set mechanisms
+#define SET_OK           0
+#define SET_ERR_NULL_SET 1
+#define SET_ERR_NULL_ELE 2
+#define SET_INSERTION_FAILED 3
+
 /*************/
 /* Utilities */
 /*************/
@@ -13,16 +19,10 @@
     exit(EXIT_FAILURE); \
 }
 
+
 /************************************************************************************/
 /* Generic set datastructure. Implemented using a BST. Also used to represent sets. */
 /************************************************************************************/
-
-// Constants returned as part of error mechanisms
-#define SET_OK           0
-#define SET_ERR_NULL_SET 1
-#define SET_ERR_NULL_ELE 2
-#define SET_INSERTION_FAILED 3
-
 // Custom, non type-safe, strcmp function that works nicely with the set_t interface
 int strcomp(const void* lhs, const void* rhs) {
     return strcmp((const char*) lhs, (const char*) rhs);
@@ -46,6 +46,9 @@ typedef int (*compfun_t)(const void* lhs, const void* rhs);
 // Function type used to customize set duplicate handling
 typedef int (*handle_dup_fun_t)(void* old, void* new);
 
+// Function type used to customize element deallocation
+typedef void (*free_element_fun_t) (void* to_free);
+
 // Node type
 typedef struct _set_node_t {
     void* data;
@@ -59,6 +62,7 @@ typedef struct _set_t {
     set_node_t* root;
     compfun_t comp;
     handle_dup_fun_t handle_dup;
+    free_element_fun_t free_element;
 } set_t;
 
 // Create a new node with no children
@@ -77,33 +81,34 @@ int node_is_leaf(const set_node_t* node) {
 }
 
 // Create a new empty set
-set_t* set_empty(compfun_t comp, handle_dup_fun_t handle_dup) {
+set_t* set_empty(compfun_t comp, handle_dup_fun_t handle_dup, free_element_fun_t free_element) {
     set_t* result = malloc(sizeof(set_t));
     result->root = NULL;
     result->comp = comp;
     result->handle_dup = handle_dup;
+    result->free_element = free_element;
     return result;
 }
 
 // Free memory allocated by given set
-void node_free(set_node_t*);
+void node_free(set_node_t*, free_element_fun_t);
 int set_free(set_t* set) {
     if (!set)
         return SET_ERR_NULL_SET;
 
-    node_free(set->root); set->root = NULL;
+    node_free(set->root, set->free_element); set->root = NULL;
     free(set);
 
     return SET_OK;
 }
-void node_free(set_node_t* node) {
+void node_free(set_node_t* node, free_element_fun_t free_ele) {
     if (node) {
         // Free data the node contains.
-        free(node->data);
+        free_ele(node->data);
 
         // Recursively free left and right nodes
-        node_free(node->left);
-        node_free(node->right);
+        node_free(node->left, free_ele);
+        node_free(node->right, free_ele);
 
         // Free memory occupied by node structure itself
         free(node);
@@ -188,7 +193,7 @@ int set_add(set_t* set, void* element) {
 
     if (result == SET_INSERTION_FAILED) {
         // TODO: Optimization opportunity: do not do this free
-        node_free(node_to_add);
+        node_free(node_to_add, set->free_element);
         return SET_INSERTION_FAILED;
     }
 
@@ -271,7 +276,8 @@ void set_remove(set_t* set, void* ele_to_remove) {
             node_remove(
                 node_get_ref(&(set->root), ele_to_remove, set->comp),
                 set->comp
-            )
+            ),
+            set->free_element
         );
 }
 set_node_t* node_remove(set_node_t** to_remove_ref, compfun_t comp) {
@@ -326,6 +332,81 @@ set_node_t* node_remove(set_node_t** to_remove_ref, compfun_t comp) {
 }
 
 /**********************************************/
+/* Data types used to construct relations set */
+/**********************************************/
+typedef struct rxing_amount_info_ {
+    int amount;
+    set_t* rxing_ents_set;    // set of const char*
+} rxing_amount_info_t;
+// Custom compare function
+int rxing_amount_info_comp(const void* lhs, const void* rhs) {
+    int lhs_id = ((rxing_amount_info_t*) lhs)->amount;
+    int rhs_id = ((rxing_amount_info_t*) rhs)->amount;
+
+    return lhs_id < rhs_id;
+}
+// Custom free function
+void rxing_amount_info_free(void* to_free) {
+    set_free(((rxing_amount_info_t*) to_free)->rxing_ents_set);
+
+    free(to_free);
+}
+
+typedef struct rxing_ent_info_ {
+    char* id;
+    set_t* txing_ents_set;    // set of const char*
+} rxing_ent_info_t;
+// Custom compare function
+int rxing_ent_info_comp(const void* lhs, const void* rhs) {
+    const char* lhs_id = ((rxing_ent_info_t*) lhs)->id;
+    const char* rhs_id = ((rxing_ent_info_t*) rhs)->id;
+
+    return strcmp(lhs_id, rhs_id);
+}
+// Custom free function
+void rxing_ent_info_free(void* to_free_v) {
+    rxing_ent_info_t* to_free = (rxing_ent_info_t*) to_free_v;
+
+    free(to_free->id);
+    set_free(to_free->txing_ents_set);
+
+    free(to_free);
+}
+
+typedef struct relinfo_t_ {
+    char* id;
+    set_t* rxing_ents_set;    // set of rxing_ent_info
+    set_t* rxing_amounts_set; // set of rxing_amount_info
+} relinfo_t;
+// Custom compare function for relinfo type (used in sets)
+int relinfo_comp(const void* lhs, const void* rhs) {
+    const char* lhs_id = ((relinfo_t*) lhs)->id;
+    const char* rhs_id = ((relinfo_t*) rhs)->id;
+
+    return strcmp(lhs_id, rhs_id);
+}
+// Custom free function
+void relinfo_free(void* to_free_v) {
+    relinfo_t* to_free = (relinfo_t*) to_free_v;
+
+    free(to_free->id);
+    set_free(to_free->rxing_ents_set);
+    set_free(to_free->rxing_amounts_set);
+
+    free(to_free);
+}
+
+// Allocate new relinfo
+relinfo_t* relinfo_new(char* rel_id, char* tx_ent, char* rx_ent) {
+    relinfo_t* result = malloc(sizeof(relinfo_t));
+    result->id = rel_id;
+    result->rxing_ents_set = set_empty(&rxing_ent_info_comp, &disallow_duplicates, &rxing_ent_info_free);
+    result->rxing_amounts_set = set_empty(&rxing_amount_info_comp, &disallow_duplicates, &rxing_amount_info_free);
+
+    return result;
+}
+
+/**********************************************/
 /* Helper functions for handling program flow */
 /**********************************************/
 // Config constants
@@ -334,6 +415,7 @@ set_node_t* node_remove(set_node_t** to_remove_ref, compfun_t comp) {
 
 // Entity config constants
 #define ENT_NAME_BUF_LEN 100
+#define REL_NAME_BUF_LEN 100
 
 // Configure progam
 void configure(int argc, char** argv, FILE** in_f, FILE** out_f, int* debug_mode) {
@@ -352,15 +434,13 @@ void configure(int argc, char** argv, FILE** in_f, FILE** out_f, int* debug_mode
 
 // Initialize empty entity storage
 set_t* initialize_entities() {
-    return set_empty(&strcomp, &discard_dup);
+    return set_empty(&strcomp, &discard_dup, &free);
 }
 
 // Initialize empty relations storage
 set_t* initialize_relations() {
-    // TODO: implement
-    return NULL;
+    return set_empty(&relinfo_comp, &disallow_duplicates, &relinfo_free);
 }
-
 
 /********/
 /* Main */
@@ -401,6 +481,22 @@ int main(int argc, char** argv) {
             // Perform removal
             set_remove(entities, (void*) to_remove);
 
+        } else if (strcmp(command, "addrel") == 0) {
+            // Get name of txing entity
+            char* txing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+            fscanf(in_f, "%s", txing_ent);
+
+            // Get name of rxing entity
+            char* rxing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+            fscanf(in_f, "%s", rxing_ent);
+
+            // Get name of relation
+            char* relation = malloc(sizeof(char) * REL_NAME_BUF_LEN);
+            fscanf(in_f, "%s", relation);
+
+            // Perform insertion
+            set_add(relations, relinfo_new(relation, txing_ent, rxing_ent));
+
         // Debug mode only commands
         } else if (debug_mode == DEBUG_ON) {
             if (strcmp(command, "gent") == 0) {
@@ -437,6 +533,7 @@ int main(int argc, char** argv) {
 
     // Deallocate entity set
     set_free(entities);
+    set_free(relations);
 
     // Close streams if necessary
     if (in_f != stdin)   fclose(in_f);
