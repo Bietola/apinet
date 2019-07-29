@@ -5,6 +5,7 @@ addent c
 pent
 
 addrel a b friend_of
+delrel a b friend_of
 
 prel
 
