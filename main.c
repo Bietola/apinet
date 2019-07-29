@@ -502,7 +502,7 @@ void relinfo_print(FILE* out_f, const void* v_relinfo) {
 // TODO: check for malformed relations (such as those among entities that do not exist)  
 void rel_add(map_t* /* of relinfo_t */ relations,
              const char* txing_ent, const char* rxing_ent, const char* rel_id) {
-    relinfo_t* relinfo = map_get_or(relations, rel_id, &v_relinfo_empty);
+    relinfo_t* relinfo = map_get_or(relations, strclone(rel_id), &v_relinfo_empty);
 
     intptr_t curr_tx_amount = 0; 
 
@@ -510,8 +510,8 @@ void rel_add(map_t* /* of relinfo_t */ relations,
     // Map layout: rx_map = {rxing_ent, tx_set = {txing_ent}}
     {
         map_t* rx_map = NOTNULL(relinfo->rxing_ents_map);
-        map_t* tx_set = map_get_or(rx_map, rxing_ent, &v_strset_empty); // TODO: OPT: 
-        set_add(tx_set, txing_ent);
+        map_t* tx_set = map_get_or(rx_map, strclone(rxing_ent), &v_strset_empty); // TODO: OPT: 
+        set_add(tx_set, strclone(txing_ent));
         curr_tx_amount = tx_set->len;
     }
 
@@ -531,12 +531,12 @@ void rel_add(map_t* /* of relinfo_t */ relations,
         if (prev_rx_set) {
             // NB. if the removal does not take place, then more than one relation was added at once -
             //     this is ignored.
-            map_remove(prev_rx_set, (void*) rxing_ent);
+            map_remove(prev_rx_set, (void*) strclone(rxing_ent));
         }
 
         // Place rx in rx set associated with its updated tx amount
         map_t* curr_rx_set = map_get_or(amm_map, (void*) curr_tx_amount, &v_strset_empty);
-        assert(set_add(curr_rx_set, rxing_ent) == MAP_OK);
+        assert(set_add(curr_rx_set, strclone(rxing_ent)) == MAP_OK);
     }
 }
 
@@ -618,16 +618,16 @@ int main(int argc, char** argv) {
 
         } else if (strcmp(command, "addrel") == 0) {
             // Get name of txing entity
-            const char* txing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
-            fscanf(in_f, "%s", (char*) txing_ent);
+            char txing_ent[ENT_NAME_BUF_LEN];
+            fscanf(in_f, "%s", txing_ent);
 
             // Get name of rxing entity
-            const char* rxing_ent = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
-            fscanf(in_f, "%s", (char*) rxing_ent);
+            char rxing_ent[ENT_NAME_BUF_LEN];
+            fscanf(in_f, "%s", rxing_ent);
 
             // Get name of relation
-            const char* relation = malloc(sizeof(char) * REL_NAME_BUF_LEN);
-            fscanf(in_f, "%s", (char*) relation);
+            char relation[REL_NAME_BUF_LEN];
+            fscanf(in_f, "%s", relation);
 
             // Add relation
             rel_add(relations, txing_ent, rxing_ent, relation);
