@@ -35,6 +35,14 @@ void do_nothing(void* _) {
     ;
 }
 
+// Allocate and return a clone of the passed in string
+char* strclone(const char* to_clone) {
+    char* result = malloc(sizeof(char) * (strlen(to_clone) + 1)); // +1 is for terminator
+    strcpy(result, to_clone);
+
+    return result;
+}
+
 /************************************************************************************/
 /* Generic map datastructure. Implemented using a BST. Also used to represent sets. */
 /************************************************************************************/
@@ -490,6 +498,8 @@ void relinfo_print(FILE* out_f, const void* v_relinfo) {
 /*******************************************/
 /* Helper functions for handling relations */
 /*******************************************/
+// Add a relation to the database
+// TODO: check for malformed relations (such as those among entities that do not exist)  
 void rel_add(map_t* /* of relinfo_t */ relations,
              const char* txing_ent, const char* rxing_ent, const char* rel_id) {
     relinfo_t* relinfo = map_get_or(relations, rel_id, &v_relinfo_empty);
@@ -519,8 +529,8 @@ void rel_add(map_t* /* of relinfo_t */ relations,
         map_t* amm_map = NOTNULL(relinfo->rxing_amounts_map);
         map_t* prev_rx_set = map_get(amm_map, (void*) (curr_tx_amount - 1));
         if (prev_rx_set) {
-            // NB. if the removal does not take place, then more than one relation was added at once,
-            // which should be impossible
+            // NB. if the removal does not take place, then more than one relation was added at once -
+            //     this is ignored.
             map_remove(prev_rx_set, (void*) rxing_ent);
         }
 
