@@ -353,13 +353,13 @@ void* map_get_or(map_t* map, const void* key, map_ele_maker_fun_t make_ele) {
 
 // Remove an element from a given map and return it
 map_node_t* node_remove(map_node_t**, compfun_t comp);
-void map_remove(map_t* map, void* ele_to_remove) {
+void map_remove(map_t* map, const void* ele_to_remove) {
     NULLCHECK2(map, ele_to_remove);
 
     map_node_t** node_to_remove = node_get_ref(&(map->root), ele_to_remove, map->comp);
 
     if (node_to_remove) {
-        map->len++;
+        map->len--;
 
         node_free(
             node_remove(node_to_remove, map->comp),
@@ -420,6 +420,23 @@ map_node_t* node_remove(map_node_t** to_remove_ref, compfun_t comp) {
     return to_remove;
 }
 
+// Remove an element from a map of maps, also removing outer map element if the inner
+// map is left empty
+void map_inner_remove(map_t* outer_map, const void* outer_key, const void* inner_key) {
+    map_node_t** inner_map_node_ref = node_get_ref(&(outer_map->root), outer_key, outer_map->comp);
+    if (*inner_map_node_ref) {
+        map_t* inner_map = (map_t*) (*inner_map_node_ref)->data;
+        map_remove(inner_map, inner_key);
+
+        // Completely remove outer entry from map if inner map is emptied
+        if (inner_map->len == 0) {
+            map_node_t* removed = node_remove(inner_map_node_ref, outer_map->comp);
+            node_free(removed, outer_map->free_key, outer_map->free_element);
+        }
+    }
+}
+
+
 /***************************************************************/
 /* String set interface built on top of BST map implementation */
 /***************************************************************/
@@ -438,6 +455,20 @@ map_t* strset_empty() {
     return result;
 }
 
+// Allocate string set (variation of map) with a single element inside it
+map_t* strset_single(const char* element) {
+    map_t* result = malloc(sizeof(map_t));
+
+    result->root = map_node_new((const void*) element, (void*) element, NULL);
+    result->len = 1;
+    result->comp = &strcomp;
+    result->handle_dup = &disallow_duplicates;
+    // Sets have identical keys and elements, so they need to be freed only once
+    result->free_key = &do_nothing;
+    result->free_element = &free;
+
+    return result;
+}
 // Used to allocate for compatibility with map_t interface
 void* v_strset_empty() {
     return (void*) strset_empty();
@@ -500,6 +531,7 @@ void relinfo_print(FILE* out_f, const void* v_relinfo) {
 /*******************************************/
 // Add a relation to the database
 // TODO: check for malformed relations (such as those among entities that do not exist)  
+// TODO OPT: do not clone keys everytime (rel_id, rxing_ent and txin_end are cloned w\ strclone everytime)
 void rel_add(map_t* /* of relinfo_t */ relations,
              const char* txing_ent, const char* rxing_ent, const char* rel_id) {
     relinfo_t* relinfo = map_get_or(relations, strclone(rel_id), &v_relinfo_empty);
@@ -538,6 +570,18 @@ void rel_add(map_t* /* of relinfo_t */ relations,
         map_t* curr_rx_set = map_get_or(amm_map, (void*) curr_tx_amount, &v_strset_empty);
         assert(set_add(curr_rx_set, strclone(rxing_ent)) == MAP_OK);
     }
+}
+
+// Remove relation from database
+void rel_del(map_t* /* of relinfo_t */ relations,
+             const char* txing_ent, const char* rxing_ent, const char* rel_id) {
+    // Get relinfo relative to removed relation
+    relinfo_t* relinfo = (relinfo_t*) map_get(relations, rel_id);
+
+    // Remove rxing_ent and txing_ent
+    // TODO OPT: see if this is better left as is or if removing it is better
+    //           (removal would entail speed^/mem^ opt).
+    map_inner_remove(relinfo->rxing_ents_map, (void*) rxing_ent, (void*) txing_ent);
 }
 
 
@@ -581,103 +625,118 @@ map_t* initialize_relations() {
 /* Main */
 /********/
 int main(int argc, char** argv) {
-    // Configure program
-    FILE* in_f;
-    FILE* out_f;
-    int debug_mode;
-    configure(argc, argv, &in_f, &out_f, &debug_mode);
+    /* // Configure program */
+    /* FILE* in_f; */
+    /* FILE* out_f; */
+    /* int debug_mode; */
+    /* configure(argc, argv, &in_f, &out_f, &debug_mode); */
 
-    // Initialize apinet storage
-    map_t* entities = initialize_entities();
-    map_t* relations = initialize_relations();
+    /* // Initialize apinet storage */
+    /* map_t* entities = initialize_entities(); */
+    /* map_t* relations = initialize_relations(); */
 
-    // User interaction loop
-    char command[1024];
-    while (1) {
-        // Read head of command from user
-        fscanf(in_f, "%s", command);
+    /* // User interaction loop */
+    /* char command[1024]; */
+    /* while (1) { */
+    /*     // Read head of command from user */
+    /*     fscanf(in_f, "%s", command); */
 
-        // Process head of command
-        if (strcmp(command, "addent") == 0) {
-            // Allocate space for entity name
-            const char* to_add = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+    /*     // Process head of command */
+    /*     if (strcmp(command, "addent") == 0) { */
+    /*         // Allocate space for entity name */
+    /*         const char* to_add = malloc(sizeof(char) * ENT_NAME_BUF_LEN); */
 
-            // Parse second command argument as entity name
-            fscanf(in_f, "%s", (char*) to_add);
+    /*         // Parse second command argument as entity name */
+    /*         fscanf(in_f, "%s", (char*) to_add); */
 
-            // Add entity to map
-            map_add(entities, (const void*) to_add, (void*) to_add);
+    /*         // Add entity to map */
+    /*         map_add(entities, (const void*) to_add, (void*) to_add); */
 
-        } else if (strcmp(command, "delent") == 0) {
-            // Get name of entity to remove from first command argument
-            char to_remove[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", to_remove);
+    /*     } else if (strcmp(command, "delent") == 0) { */
+    /*         // Get name of entity to remove from first command argument */
+    /*         char to_remove[ENT_NAME_BUF_LEN]; */
+    /*         fscanf(in_f, "%s", to_remove); */
 
-            // Perform removal
-            map_remove(entities, (void*) to_remove);
+    /*         // Perform removal */
+    /*         map_remove(entities, (void*) to_remove); */
 
-        } else if (strcmp(command, "addrel") == 0) {
-            // Get name of txing entity
-            char txing_ent[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", txing_ent);
+    /*     } else if (strcmp(command, "addrel") == 0) { */
+    /*         // Get name of txing entity */
+    /*         char txing_ent[ENT_NAME_BUF_LEN]; */
+    /*         fscanf(in_f, "%s", txing_ent); */
 
-            // Get name of rxing entity
-            char rxing_ent[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", rxing_ent);
+    /*         // Get name of rxing entity */
+    /*         char rxing_ent[ENT_NAME_BUF_LEN]; */
+    /*         fscanf(in_f, "%s", rxing_ent); */
 
-            // Get name of relation
-            char relation[REL_NAME_BUF_LEN];
-            fscanf(in_f, "%s", relation);
+    /*         // Get name of relation */
+    /*         char relation[REL_NAME_BUF_LEN]; */
+    /*         fscanf(in_f, "%s", relation); */
 
-            // Add relation
-            rel_add(relations, txing_ent, rxing_ent, relation);
+    /*         // Add relation */
+    /*         rel_add(relations, txing_ent, rxing_ent, relation); */
 
-            // Debug mode only commands
-        } else if (debug_mode == DEBUG_ON) {
-            if (strcmp(command, "gent") == 0) {
-                // Retrieve string to get
-                char to_get[ENT_NAME_BUF_LEN];
-                fscanf(in_f, "%s", to_get);
+    /*         // Debug mode only commands */
+    /*     } else if (debug_mode == DEBUG_ON) { */
+    /*         if (strcmp(command, "gent") == 0) { */
+    /*             // Retrieve string to get */
+    /*             char to_get[ENT_NAME_BUF_LEN]; */
+    /*             fscanf(in_f, "%s", to_get); */
 
-                // Get it
-                void* result = map_get(entities, (void*) to_get);
+    /*             // Get it */
+    /*             void* result = map_get(entities, (void*) to_get); */
 
-                // Print the result as a string if present
-                if (result == NULL)
-                    puts("NOT PRESENT!");
-                else 
-                    puts((const char*) result);
+    /*             // Print the result as a string if present */
+    /*             if (result == NULL) */
+    /*                 puts("NOT PRESENT!"); */
+    /*             else */ 
+    /*                 puts((const char*) result); */
 
-            } else if (strcmp(command, "pent") == 0) {
-                map_print(out_f, entities);
-                fprintf(out_f, "\n");
+    /*         } else if (strcmp(command, "pent") == 0) { */
+    /*             map_print(out_f, entities); */
+    /*             fprintf(out_f, "\n"); */
 
-            } else if (strcmp(command, "prel") == 0) {
-                map_print_with(out_f, relations, &str_printer, &relinfo_print);
-                fprintf(out_f, "\n");
+    /*         } else if (strcmp(command, "prel") == 0) { */
+    /*             map_print_with(out_f, relations, &str_printer, &relinfo_print); */
+    /*             fprintf(out_f, "\n"); */
 
-            } else if (strcmp(command, "quit") == 0) {
-                break;
+    /*         } else if (strcmp(command, "quit") == 0) { */
+    /*             break; */
 
-            } else {
-                goto invalid_command;
-            }
-        } else {
-invalid_command: {
-                     printf("Unrecognized command: %s", command);
-                     exit(EXIT_FAILURE);
-                 }
-        }
+    /*         } else { */
+    /*             goto invalid_command; */
+    /*         } */
+    /*     } else { */
+/* invalid_command: { */
+    /*                  printf("Unrecognized command: %s", command); */
+    /*                  exit(EXIT_FAILURE); */
+    /*              } */
+    /*     } */
 
-    }
+    /* } */
 
-    // Deallocate entity map
-    map_free(entities);
-    map_free(relations);
+    /* // Deallocate entity map */
+    /* map_free(entities); */
+    /* map_free(relations); */
 
-    // Close streams if necessary
-    if (in_f != stdin)   fclose(in_f);
-    if (out_f != stdout) fclose(out_f);
+    /* // Close streams if necessary */
+    /* if (in_f != stdin)   fclose(in_f); */
+    /* if (out_f != stdout) fclose(out_f); */
+
+    map_t* map = map_empty(&strcomp, &disallow_duplicates, &free, &map_vfree);
+    assert(map_add(map, (const void*) strclone("a"), (void*) strset_single(strclone("a"))) == MAP_OK);
+    assert(map_add(map, (const void*) strclone("b"), (void*) strset_single(strclone("b"))) == MAP_OK);
+    assert(map_add(map, (const void*) strclone("c"), (void*) strset_single(strclone("c"))) == MAP_OK);
+    assert(map_add(map, (const void*) strclone("d"), (void*) strset_single(strclone("d"))) == MAP_OK);
+    assert(map_add(map, (const void*) strclone("e"), (void*) strset_single(strclone("e"))) == MAP_OK);
+
+    map_remove(map, "a");
+    map_remove((map_t*) map_get(map, "b"), "b");
+    map_inner_remove(map, "c", "c");
+
+    map_print_with(stdout, map, &str_printer, &strset_printer);
+
+    map_free(map);
 
     // Exit
     return 0;
