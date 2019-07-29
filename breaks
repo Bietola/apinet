@@ -1,0 +1,2 @@
+break /home/dincio/code/apinet/main.c:528
+  condition $bpnum curr_tx_amount == 2
