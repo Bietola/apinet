@@ -531,6 +531,11 @@ void* v_relinfo_empty() {
     return (void*) relinfo_empty();
 }
 
+// 1 if relinfo is empty, 0 otherwise 
+int relinfo_is_empty(const relinfo_t* relinfo) {
+    return relinfo->rxing_ents_map->len == 0;
+}
+
 // Custom printer for relinfo entries in maps
 void relinfo_print(FILE* out_f, const void* v_relinfo) {
     fputs("ri< ", out_f);
@@ -594,36 +599,59 @@ void rel_add(map_t* /* of relinfo_t */ relations,
     }
 }
 
-// Remove relation from database
+// Deletes relation from database
+// TODO: find a way to simulate currying and abstract cleanup 
+//       into higher order function
 void rel_del(map_t* /* of relinfo_t */ relations,
              const char* txing_ent, const char* rxing_ent, const char* rel_id) {
     // Get relinfo relative to removed relation
-    relinfo_t* relinfo = (relinfo_t*) map_get(relations, rel_id);
+    map_node_t** relinfo_node_ref = node_get_ref(&(relations->root), rel_id, relations->comp);
+    relinfo_t* relinfo = (relinfo_t*) ((*relinfo_node_ref)->data);
 
     // Remove rxing_ent and txing_ent
     // TODO OPT: see if this is better left as is or if removing it is better
     //           (removal would entail speed^/mem^ opt).
     int txs_len;
-    int res = map_inner_remove_get_len(relinfo->rxing_ents_map, 
+    int removal_res = map_inner_remove_get_len(relinfo->rxing_ents_map, 
             (const void*) rxing_ent, 
             (const void*) txing_ent,
             &txs_len);
 
-    if (res == MAP_OK) {
+    if (removal_res == MAP_OK) {
         // Update tx_ammount cache
         map_inner_remove(relinfo->rxing_amounts_map,
                 (const void*) (intptr_t) (txs_len + 1),
                 (const void*) rxing_ent);
-
         if (txs_len > 0) {
-            set_add(map_get_or(relinfo->rxing_amounts_map, 
-                        (const void*) (intptr_t) (txs_len),
+            set_add(map_get_or(
+                        relinfo->rxing_amounts_map, 
+                        (const void*) (intptr_t) txs_len,
                         &v_strset_empty),
                     (const void*) rxing_ent);
+        }
+
+        // Cleanup relinfo if empty
+        if (relinfo_is_empty(relinfo))  {
+            node_free(node_remove(relinfo_node_ref, relations->comp),
+                    relations->free_key,
+                    relations->free_element);
         }
     }
 }
 
+// TODO: implement this with currying (see above)
+/************************************************************************************/
+/* // Removes relation from database                                                */
+/* void rel_del(map_t* * of relinfo_t *\/ relations,                                */
+/*              const char* txing_ent, const char* rxing_ent, const char* rel_id) { */
+/*     void do_it(map_t* map, const void* key) {                                    */
+/*         rel_del_no_cleanup(map, txing_ent, rxing_ent, (const char*) key);        */
+/*     }                                                                            */
+/*                                                                                  */
+/*     do_then_cleanup(&do_it, &relinfo_is_empty, &relinfo_vfree);                  */
+/* }                                                                                */
+/*                                                                                  */
+/************************************************************************************/
 
 /**********************************************/
 /* Helper functions for handling program flow */
