@@ -1,12 +1,27 @@
 addent a
 addent b
 addent c
+addent d
+addent e
+addent f
 
-pent
+delent e
 
 addrel a b friend_of
-delrel a b friend_of
+addrel b b friend_of
 
+addrel a a friend_of
+addrel c a friend_of
+addrel d a friend_of
+
+report
 prel
+
+delrel c a friend_of
+
+report
+prel
+
+pent
 
 quit

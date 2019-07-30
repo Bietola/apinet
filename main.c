@@ -35,12 +35,27 @@ void do_nothing(void* _) {
     ;
 }
 
+// Printer that prints nothing
+void noop_printer(FILE* out_f, const void* to_print) {
+    ;
+}
+
 // Allocate and return a clone of the passed in string
 char* strclone(const char* to_clone) {
     char* result = malloc(sizeof(char) * (strlen(to_clone) + 1)); // +1 is for terminator
     strcpy(result, to_clone);
 
     return result;
+}
+
+// Map key cloner for strings
+const void* str_cloner(const void* to_clone) {
+    return (const void*) strclone((const char*) to_clone);
+}
+
+// Map shallow cloneer
+const void* shallow_cloner(const void* to_clone) {
+    return to_clone;
 }
 
 /************************************************************************************/
@@ -81,6 +96,9 @@ void int_printer(FILE* out_f, const void* to_print) {
 // Function type used to customize map ordering
 typedef int (*compfun_t)(const void* lhs, const void* rhs);
 
+// Function type used to customize key copying
+typedef const void* (*key_cloner_fun_t)(const void* key);
+
 // Type for functions meant to allocate and initialize new map element
 typedef void* (*map_ele_maker_fun_t)();
 
@@ -110,18 +128,19 @@ typedef struct _map_t {
     map_node_t* root;
     int len;
     compfun_t comp;
+    key_cloner_fun_t clone_key;
     handle_dup_fun_t handle_dup;
     free_element_fun_t free_element;
     free_key_fun_t free_key;
 } map_t;
 
 // Create a new node with no children
-map_node_t* map_node_new(const char* key, void* data, map_node_t* parent) {
+map_node_t* map_node_new(const char* key, void* data, map_node_t* parent, key_cloner_fun_t clone_key) {
     map_node_t* result = malloc(sizeof(map_node_t));
     result->parent = parent;
     result->left = NULL;
     result->right = NULL;
-    result->key = key;
+    result->key = clone_key(key);
     result->data = data;
     return result;
 }
@@ -132,13 +151,15 @@ int node_is_leaf(const map_node_t* node) {
 }
 
 // Create a new empty map
-map_t* map_empty(compfun_t comp, handle_dup_fun_t handle_dup, free_key_fun_t free_key,
-                 free_element_fun_t free_element) {
+map_t* map_empty( compfun_t comp, key_cloner_fun_t clone_key,
+        handle_dup_fun_t handle_dup, free_key_fun_t free_key,
+        free_element_fun_t free_element) {
     map_t* result = malloc(sizeof(map_t));
 
     result->root = NULL;
     result->len = 0;
     result->comp = comp;
+    result->clone_key = clone_key;
     result->handle_dup = handle_dup;
     result->free_key = free_key;
     result->free_element = free_element;
@@ -179,34 +200,50 @@ void node_free(map_node_t* node, free_key_fun_t free_key, free_element_fun_t fre
 }
 
 // Print the contents of a map in order
-void node_print(FILE*, map_node_t*, printer_fun_t, printer_fun_t);
-int map_print_with(FILE* out_f, const map_t* map, printer_fun_t print_key, printer_fun_t print_ele) {
+#define PRINT_MODE_CUSTOM 0
+#define PRINT_MODE_DB 1
+void node_print(FILE*, map_node_t*, printer_fun_t, printer_fun_t, int);
+int map_print_with(FILE* out_f, const map_t* map,
+        printer_fun_t print_key,
+        printer_fun_t print_ele,
+        int print_mode) {
     if (!map)
         return MAP_ERR_NULL_MAP;
 
-    fputs("{ ", out_f);
+    if (print_mode == PRINT_MODE_DB) fputs("{ ", out_f);
 
-    node_print(out_f, map->root, print_key, print_ele);
+    node_print(out_f, map->root, print_key, print_ele, print_mode);
 
-    fputs("}", out_f);
+    if (print_mode == PRINT_MODE_DB) fputs("}", out_f);
 
     return MAP_OK;
 }
-int map_print(FILE* out_f, map_t* map) {
-    return map_print_with(out_f, map, &str_printer, &str_printer);
+int set_print_with(FILE* out_f, const map_t* set,
+        printer_fun_t print_ele,
+        int print_mode) {
+    return map_print_with(out_f, set, print_ele, &noop_printer, print_mode);
+}
+int map_print(FILE* out_f, map_t* map, int print_mode) {
+    return map_print_with(out_f, map, &str_printer, &str_printer, print_mode);
+}
+int map_db_print(FILE* out_f, map_t* map) {
+    return map_print(out_f, map, PRINT_MODE_DB);
 }
 // Helper function to aid recursion in map printing 
-void node_print(FILE* out_f, map_node_t* node, printer_fun_t print_key, printer_fun_t print_ele) {
+void node_print(FILE* out_f, map_node_t* node,
+        printer_fun_t print_key,
+        printer_fun_t print_ele,
+        int print_mode) {
     if (node) {
-        node_print(out_f, node->left, print_key, print_ele);
+        node_print(out_f, node->left, print_key, print_ele, print_mode);
 
-        fputs("(", out_f);
+        if (print_mode == PRINT_MODE_DB) fputs("(", out_f);
         print_key(out_f, node->key);
-        fputs(": ", out_f);
+        if (print_mode == PRINT_MODE_DB) fputs(": ", out_f);
         print_ele(out_f, node->data);
-        fputs(") ", out_f);
+        if (print_mode == PRINT_MODE_DB) fputs(") ", out_f);
 
-        node_print(out_f, node->right, print_key, print_ele);
+        node_print(out_f, node->right, print_key, print_ele, print_mode);
     }
 }
 
@@ -247,11 +284,12 @@ int map_add(map_t* map, const void* key, void* element) {
     if (map == NULL)
         return MAP_ERR_NULL_MAP;
 
-    map_node_t* node_to_add = map_node_new(key, element, NULL);
+    // TODO: OPT: make node_inplace_add
+    map_node_t* node_to_add = map_node_new(key, element, NULL, map->clone_key);
     int result = node_add(&(map->root), node_to_add, map->comp, map->handle_dup, NULL);
 
     if (result == MAP_OPERATION_FAILED) {
-        // TODO: Optimization opportunity: do not do this free
+        // TODO: OPT: Optimization opportunity: do not do this free
         node_free(node_to_add, map->free_key, map->free_element);
         return MAP_OPERATION_FAILED;
     }
@@ -260,8 +298,20 @@ int map_add(map_t* map, const void* key, void* element) {
     return MAP_OK;
 }                                                   
 // Variant for sets
-int set_add(map_t* set, const void* to_add) {
-    return map_add(set, to_add, (void*) to_add);
+map_node_t** node_get_ref(map_node_t**, const void*, compfun_t); // forward dec.
+int set_add(map_t* set, const void* element) {
+    map_node_t** target_node_ref = NOTNULL(node_get_ref(&(set->root), element, set->comp));
+
+    if (*target_node_ref == NULL)  {
+        *target_node_ref = map_node_new(element, (void*) element, NULL, set->clone_key);
+        (*target_node_ref)->data = (void*) (*target_node_ref)->key;
+
+        set->len++;
+
+        return MAP_OK;
+    } else  {
+        return set->handle_dup(element, (*target_node_ref)->data, (void*) element);
+    }
 }
 // Helper function to aid recursion
 //  NB. cur_parent is meant to be NULL at first call
@@ -292,7 +342,6 @@ int node_add(map_node_t** root_ref, map_node_t* to_add,
 
 // Retrieves the specified element from a map. Returns NULL if there is no
 // such element inside the map.
-map_node_t** node_get_ref(map_node_t**, const void*, compfun_t); // forward dec.
 map_node_t* node_get(map_node_t*, const void*, compfun_t);
 void* map_get(map_t* map, const void* element) {
     // Search element starting from the map's root node using its associated comparison function.
@@ -345,10 +394,21 @@ void* map_get_or(map_t* map, const void* key, map_ele_maker_fun_t make_ele) {
     map_node_t** found_node_ref = NOTNULL(node_get_ref_and_parent(&(map->root), key, map->comp, &parent));
 
     if (!(*found_node_ref)) {
-        *found_node_ref = map_node_new(key, make_ele(), parent);
+        *found_node_ref = map_node_new(key, make_ele(), parent, map->clone_key);
+        map->len++;
     }
 
     return (*found_node_ref)->data;
+}
+
+// Gets the map entry corresponding to the key with the greatest value in the map
+map_node_t* node_get_rightmost(map_node_t* root, compfun_t comp) {
+    if (!root || !(root->right)) return root;
+
+    return node_get_rightmost(root->right, comp);
+}
+map_node_t* map_get_max_node(const map_t* map) {
+    return node_get_rightmost(map->root, map->comp);
 }
 
 // Remove an element from a given map and return it
@@ -469,10 +529,11 @@ map_t* strset_empty() {
     result->root = NULL;
     result->len = 0;
     result->comp = &strcomp;
+    result->clone_key = &str_cloner;
     result->handle_dup = &disallow_duplicates;
     // Sets have identical keys and elements, so they need to be freed only once
-    result->free_key = &do_nothing;
-    result->free_element = &free;
+    result->free_key = &free;
+    result->free_element = &do_nothing;
 
     return result;
 }
@@ -481,13 +542,13 @@ map_t* strset_empty() {
 map_t* strset_single(const char* element) {
     map_t* result = malloc(sizeof(map_t));
 
-    result->root = map_node_new((const void*) element, (void*) element, NULL);
+    result->root = map_node_new((const void*) element, (void*) element, NULL, &str_cloner);
     result->len = 1;
     result->comp = &strcomp;
     result->handle_dup = &disallow_duplicates;
     // Sets have identical keys and elements, so they need to be freed only once
-    result->free_key = &do_nothing;
-    result->free_element = &free;
+    result->free_key = &free;
+    result->free_element = &do_nothing;
 
     return result;
 }
@@ -498,7 +559,7 @@ void* v_strset_empty() {
 
 // Used to print strsets in maps
 void strset_printer(FILE* out_f, const void* to_print) {
-    map_print_with(out_f, (const map_t*) to_print, &str_printer, &str_printer);
+    map_print_with(out_f, (const map_t*) to_print, &str_printer, &str_printer, PRINT_MODE_CUSTOM);
 }
 
 /**********************************************/
@@ -522,8 +583,8 @@ void relinfo_free(void* to_free_v) {
 relinfo_t* relinfo_empty() {
     relinfo_t* result = malloc(sizeof(relinfo_t));
 
-    result->rxing_ents_map = map_empty(&strcomp, &disallow_duplicates, &free, &map_vfree);
-    result->rxing_amounts_map = map_empty(&intcmp, &disallow_duplicates, &do_nothing, &map_vfree);
+    result->rxing_ents_map = map_empty(&strcomp, &str_cloner, &disallow_duplicates, &free, &map_vfree);
+    result->rxing_amounts_map = map_empty(&intcmp, &shallow_cloner, &disallow_duplicates, &do_nothing, &map_vfree);
 
     return result;
 }
@@ -545,9 +606,11 @@ void relinfo_print(FILE* out_f, const void* v_relinfo) {
     if (!relinfo) {
         puts("NULL");
     } else {
-        map_print_with(out_f, relinfo->rxing_ents_map, &str_printer, &strset_printer);
+        map_print_with(out_f, relinfo->rxing_ents_map, &str_printer, &strset_printer,
+                PRINT_MODE_DB);
         fputs(", ", out_f);
-        map_print_with(out_f, relinfo->rxing_amounts_map, &int_printer, &strset_printer);
+        map_print_with(out_f, relinfo->rxing_amounts_map, &int_printer, &strset_printer,
+                PRINT_MODE_DB);
     }
 
     fputs(" >", out_f);
@@ -561,7 +624,7 @@ void relinfo_print(FILE* out_f, const void* v_relinfo) {
 // TODO OPT: do not clone keys everytime (rel_id, rxing_ent and txin_end are cloned w\ strclone everytime)
 void rel_add(map_t* /* of relinfo_t */ relations,
              const char* txing_ent, const char* rxing_ent, const char* rel_id) {
-    relinfo_t* relinfo = map_get_or(relations, strclone(rel_id), &v_relinfo_empty);
+    relinfo_t* relinfo = map_get_or(relations, rel_id, &v_relinfo_empty);
 
     intptr_t curr_tx_amount = 0; 
 
@@ -569,8 +632,8 @@ void rel_add(map_t* /* of relinfo_t */ relations,
     // Map layout: rx_map = {rxing_ent, tx_set = {txing_ent}}
     {
         map_t* rx_map = NOTNULL(relinfo->rxing_ents_map);
-        map_t* tx_set = map_get_or(rx_map, strclone(rxing_ent), &v_strset_empty); // TODO: OPT: 
-        set_add(tx_set, strclone(txing_ent));
+        map_t* tx_set = map_get_or(rx_map, rxing_ent, &v_strset_empty); // TODO: OPT: 
+        set_add(tx_set, txing_ent);
         curr_tx_amount = tx_set->len;
     }
 
@@ -590,12 +653,12 @@ void rel_add(map_t* /* of relinfo_t */ relations,
         if (prev_rx_set) {
             // NB. if the removal does not take place, then more
             //     than one relation was added at once - this is ignored
-            map_remove(prev_rx_set, (void*) strclone(rxing_ent));
+            map_remove(prev_rx_set, (void*) rxing_ent);
         }
 
         // Place rx in rx set associated with its updated tx amount
         map_t* curr_rx_set = map_get_or(amm_map, (void*) curr_tx_amount, &v_strset_empty);
-        assert(set_add(curr_rx_set, strclone(rxing_ent)) == MAP_OK);
+        assert(set_add(curr_rx_set, rxing_ent) == MAP_OK);
     }
 }
 
@@ -653,6 +716,40 @@ void rel_del(map_t* /* of relinfo_t */ relations,
 /*                                                                                  */
 /************************************************************************************/
 
+/******************/
+/* Report command */
+/******************/
+void report_string_printer(FILE* out_f, const void* str) {
+    fprintf(out_f, "%s ", (const char*) str);
+}
+
+void report_relinfo_printer(FILE* out_f, const void* relinfo) {
+    map_node_t* max_node =
+        map_get_max_node(((relinfo_t*) relinfo)->rxing_amounts_map);
+
+    // Empty rx sets are not allowed
+    assert(max_node);
+
+    int txs_num = (int) (intptr_t) max_node->key;
+    map_t* rxs = (map_t*) max_node->data;
+
+    set_print_with(out_f, rxs, &report_string_printer, PRINT_MODE_CUSTOM);
+
+    fprintf(out_f, "%d; ", txs_num);
+}
+
+void report(FILE* out_f, const map_t* /* of relinfo_t */ relations) {
+    if (relations->len == 0) {
+        fputs("none\n", out_f);
+    } else  {
+        map_print_with(out_f, relations, 
+                &report_string_printer, 
+                &report_relinfo_printer,
+                PRINT_MODE_CUSTOM);
+        fputs("\n", out_f);
+    }
+}
+
 /**********************************************/
 /* Helper functions for handling program flow */
 /**********************************************/
@@ -681,12 +778,12 @@ void configure(int argc, char** argv, FILE** in_f, FILE** out_f, int* debug_mode
 
 // Initialize empty entity storage
 map_t* initialize_entities() {
-    return map_empty(&strcomp, &signal_insertion_fail, &free, &do_nothing);
+    return strset_empty();
 }
 
 // Initialize empty relations storage
 map_t* initialize_relations() {
-    return map_empty(&strcomp, &disallow_duplicates, &free, &relinfo_free);
+    return map_empty(&strcomp, &str_cloner, &disallow_duplicates, &free, &relinfo_free);
 }
 
 /********/
@@ -712,13 +809,13 @@ int main(int argc, char** argv) {
         // Process head of command
         if (strcmp(command, "addent") == 0) {
             // Allocate space for entity name
-            const char* to_add = malloc(sizeof(char) * ENT_NAME_BUF_LEN);
+            char to_add[ENT_NAME_BUF_LEN];
 
             // Parse second command argument as entity name
-            fscanf(in_f, "%s", (char*) to_add);
+            fscanf(in_f, "%s", to_add);
 
             // Add entity to map
-            map_add(entities, (const void*) to_add, (void*) to_add);
+            set_add(entities, (const void*) to_add);
 
         } else if (strcmp(command, "delent") == 0) {
             // Get name of entity to remove from first command argument
@@ -759,6 +856,13 @@ int main(int argc, char** argv) {
 
             // Add relation
             rel_del(relations, txing_ent, rxing_ent, relation);
+
+        } else if (strcmp(command, "delent") == 0) {
+            ERROR("WIP");
+
+        } else if (strcmp(command, "report") == 0) {
+            report(out_f, relations);
+
         // Debug mode only commands
         } else if (debug_mode == DEBUG_ON) {
             if (strcmp(command, "gent") == 0) {
@@ -776,11 +880,12 @@ int main(int argc, char** argv) {
                     puts((const char*) result);
 
             } else if (strcmp(command, "pent") == 0) {
-                map_print(out_f, entities);
+                map_db_print(out_f, entities);
                 fprintf(out_f, "\n");
 
             } else if (strcmp(command, "prel") == 0) {
-                map_print_with(out_f, relations, &str_printer, &relinfo_print);
+                map_print_with(out_f, relations, &str_printer,
+                        &relinfo_print, PRINT_MODE_DB);
                 fprintf(out_f, "\n");
 
             } else if (strcmp(command, "quit") == 0) {
