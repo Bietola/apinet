@@ -422,7 +422,7 @@ int map_remove(map_t* map, const void* ele_to_remove) {
 
     map_node_t** node_to_remove = node_get_ref(&(map->root), ele_to_remove, map->comp);
 
-    if (node_to_remove) {
+    if (*node_to_remove) {
         map->len--;
 
         node_free(
@@ -534,7 +534,7 @@ map_t* strset_empty() {
     result->len = 0;
     result->comp = &strcomp;
     result->clone_key = &str_cloner;
-    result->handle_dup = &disallow_duplicates;
+    result->handle_dup = &signal_insertion_fail;
     // Sets have identical keys and elements, so they need to be freed only once
     result->free_key = &free;
     result->free_element = &do_nothing;
@@ -634,19 +634,17 @@ void rel_add(map_t* /* of relinfo_t */ relations,
 
     // Associate rx_ent to tx_ent in rxing_ents_map.
     // Map layout: rx_map = {rxing_ent, tx_set = {txing_ent}}
-    {
-        map_t* rx_map = NOTNULL(relinfo->rxing_ents_map);
-        map_t* tx_set = map_get_or(rx_map, rxing_ent, &v_strset_empty); // TODO: OPT: 
-        set_add(tx_set, txing_ent);
-        curr_tx_amount = tx_set->len;
-    }
+    map_t* rx_map = NOTNULL(relinfo->rxing_ents_map);
+    map_t* tx_set = map_get_or(rx_map, rxing_ent, &v_strset_empty); // TODO: OPT: 
+    int add_res = set_add(tx_set, txing_ent);
+    curr_tx_amount = tx_set->len;
 
     // Update tx_amounts_map with new rx_ents amount associated with inserted tx_ent.
     // Map layout: amm_map = {rx_amm, rx_set = {}};
     // where rx_amm is an int indicating the number of times the entities in the associated
     // rx_set are found at the receiving end of a relation.
     //  NB. this is just kept updated for optimization purposes
-    {
+    if (add_res == MAP_OK) {
         // Since this function can't fail to add a new relation, the amount of
         // tx ents that the rx ent of this relation must have increased
         assert(curr_tx_amount > 0); 
@@ -657,7 +655,7 @@ void rel_add(map_t* /* of relinfo_t */ relations,
 
         // Place rx in rx set associated with its updated tx amount
         map_t* curr_rx_set = map_get_or(amm_map, (void*) curr_tx_amount, &v_strset_empty);
-        assert(set_add(curr_rx_set, rxing_ent) == MAP_OK);
+        set_add(curr_rx_set, rxing_ent);
     }
 }
 
@@ -719,7 +717,7 @@ void rel_del(map_t* /* of relinfo_t */ relations,
 /* Report command */
 /******************/
 void report_string_printer(FILE* out_f, const void* str) {
-    fprintf(out_f, "%s ", (const char*) str);
+    fprintf(out_f, "\"%s\" ", (const char*) str);
 }
 
 void report_relinfo_printer(FILE* out_f, const void* relinfo) {
@@ -757,8 +755,7 @@ void report(FILE* out_f, const map_t* /* of relinfo_t */ relations) {
 #define DEBUG_OFF 1
 
 // Entity config constants
-#define ENT_NAME_BUF_LEN 100
-#define REL_NAME_BUF_LEN 100
+#define ID_SCAN_BUF 512
 
 // Configure progam
 void configure(int argc, char** argv, FILE** in_f, FILE** out_f, int* debug_mode) {
@@ -773,6 +770,31 @@ void configure(int argc, char** argv, FILE** in_f, FILE** out_f, int* debug_mode
     // Set debug mode
     if (argc > 3 && strcmp(argv[3], "db") == 0) *debug_mode = DEBUG_OFF;
     else *debug_mode = DEBUG_ON;
+}
+
+// Scan string used for entity and relation ids
+char* scan_id(FILE* in_f, int reset) {
+    static int index = 0;
+    static char buf[ID_SCAN_BUF];
+
+    if (reset)  {
+        index = 0;
+    }
+
+    char* out = buf + index;
+
+    fscanf(in_f, "%s", out);
+
+    // Check validity
+    size_t len = strlen(out);
+    assert(len >= 2);
+
+    // Remove "(s)
+    out[len - 1] = '\0';
+
+    index += (len + 1);
+
+    return out + 1;
 }
 
 // Initialize empty entity storage
@@ -807,57 +829,44 @@ int main(int argc, char** argv) {
 
         // Process head of command
         if (strcmp(command, "addent") == 0) {
-            // Allocate space for entity name
-            char to_add[ENT_NAME_BUF_LEN];
-
             // Parse second command argument as entity name
-            fscanf(in_f, "%s", to_add);
+            char* to_add = scan_id(in_f, 1);
 
             // Add entity to map
             set_add(entities, (const void*) to_add);
 
         } else if (strcmp(command, "delent") == 0) {
             // Get name of entity to remove from first command argument
-            char to_remove[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", to_remove);
+            char* to_remove = scan_id(in_f, 1);
 
             // Perform removal
             map_remove(entities, (void*) to_remove);
 
         } else if (strcmp(command, "addrel") == 0) {
             // Get name of txing entity
-            char txing_ent[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", txing_ent);
+            char* txing_ent = scan_id(in_f, 1);
 
             // Get name of rxing entity
-            char rxing_ent[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", rxing_ent);
+            char* rxing_ent = scan_id(in_f, 0);
 
             // Get name of relation
-            char relation[REL_NAME_BUF_LEN];
-            fscanf(in_f, "%s", relation);
+            char* relation = scan_id(in_f, 0);
 
             // Add relation
             rel_add(relations, txing_ent, rxing_ent, relation);
 
         } else if (strcmp(command, "delrel") == 0) {
             // Get name of txing entity
-            char txing_ent[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", txing_ent);
+            char* txing_ent = scan_id(in_f, 1);
 
             // Get name of rxing entity
-            char rxing_ent[ENT_NAME_BUF_LEN];
-            fscanf(in_f, "%s", rxing_ent);
+            char* rxing_ent = scan_id(in_f, 0);
 
             // Get name of relation
-            char relation[REL_NAME_BUF_LEN];
-            fscanf(in_f, "%s", relation);
+            char* relation = scan_id(in_f, 0);
 
             // Add relation
             rel_del(relations, txing_ent, rxing_ent, relation);
-
-        } else if (strcmp(command, "delent") == 0) {
-            ERROR("WIP");
 
         } else if (strcmp(command, "report") == 0) {
             report(out_f, relations);
@@ -866,7 +875,7 @@ int main(int argc, char** argv) {
         } else if (debug_mode == DEBUG_ON) {
             if (strcmp(command, "gent") == 0) {
                 // Retrieve string to get
-                char to_get[ENT_NAME_BUF_LEN];
+                char to_get[ID_SCAN_BUF];
                 fscanf(in_f, "%s", to_get);
 
                 // Get it
@@ -887,7 +896,7 @@ int main(int argc, char** argv) {
                         &relinfo_print, PRINT_MODE_DB);
                 fprintf(out_f, "\n");
 
-            } else if (strcmp(command, "quit") == 0) {
+            } else if (strcmp(command, "end") == 0) {
                 break;
 
             } else {
