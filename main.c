@@ -649,12 +649,7 @@ void rel_add(map_t* /* of relinfo_t */ relations,
 
         // Remove rx_ent from previous rx_set associated with old tx amount
         map_t* amm_map = NOTNULL(relinfo->rxing_amounts_map);
-        map_t* prev_rx_set = map_get(amm_map, (void*) (curr_tx_amount - 1));
-        if (prev_rx_set) {
-            // NB. if the removal does not take place, then more
-            //     than one relation was added at once - this is ignored
-            map_remove(prev_rx_set, (void*) rxing_ent);
-        }
+        map_inner_remove(amm_map, (const void*) (curr_tx_amount - 1), (const void*) rxing_ent);
 
         // Place rx in rx set associated with its updated tx amount
         map_t* curr_rx_set = map_get_or(amm_map, (void*) curr_tx_amount, &v_strset_empty);
