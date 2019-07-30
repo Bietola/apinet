@@ -202,6 +202,7 @@ void node_free(map_node_t* node, free_key_fun_t free_key, free_element_fun_t fre
 // Print the contents of a map in order
 #define PRINT_MODE_CUSTOM 0
 #define PRINT_MODE_DB 1
+#define PRINT_MODE_SET 2
 void node_print(FILE*, map_node_t*, printer_fun_t, printer_fun_t, int);
 int map_print_with(FILE* out_f, const map_t* map,
         printer_fun_t print_key,
@@ -210,11 +211,13 @@ int map_print_with(FILE* out_f, const map_t* map,
     if (!map)
         return MAP_ERR_NULL_MAP;
 
-    if (print_mode == PRINT_MODE_DB) fputs("{ ", out_f);
+    if (print_mode == PRINT_MODE_DB || print_mode == PRINT_MODE_SET)
+        fputs("{ ", out_f);
 
     node_print(out_f, map->root, print_key, print_ele, print_mode);
 
-    if (print_mode == PRINT_MODE_DB) fputs("}", out_f);
+    if (print_mode == PRINT_MODE_DB || print_mode == PRINT_MODE_SET)
+        fputs("}", out_f);
 
     return MAP_OK;
 }
@@ -242,6 +245,7 @@ void node_print(FILE* out_f, map_node_t* node,
         if (print_mode == PRINT_MODE_DB) fputs(": ", out_f);
         print_ele(out_f, node->data);
         if (print_mode == PRINT_MODE_DB) fputs(") ", out_f);
+        else if (print_mode == PRINT_MODE_SET) fputs(", ", out_f);
 
         node_print(out_f, node->right, print_key, print_ele, print_mode);
     }
@@ -559,7 +563,7 @@ void* v_strset_empty() {
 
 // Used to print strsets in maps
 void strset_printer(FILE* out_f, const void* to_print) {
-    map_print_with(out_f, (const map_t*) to_print, &str_printer, &str_printer, PRINT_MODE_CUSTOM);
+    map_print_with(out_f, (const map_t*) to_print, &str_printer, &noop_printer, PRINT_MODE_SET);
 }
 
 /**********************************************/

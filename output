@@ -1,5 +1,5 @@
 friend_of a 3; 
-{ (friend_of: ri< { (a: aaccdd) (b: aabb) }, { (2: bb) (3: aa) } >) }
+{ (friend_of: ri< { (a: { a, c, d, }) (b: { a, b, }) }, { (2: { b, }) (3: { a, }) } >) }
 friend_of a b 2; 
-{ (friend_of: ri< { (a: aadd) (b: aabb) }, { (2: aabb) } >) }
+{ (friend_of: ri< { (a: { a, d, }) (b: { a, b, }) }, { (2: { a, b, }) } >) }
 { (a: a) (b: b) (c: c) (d: d) (f: f) }
