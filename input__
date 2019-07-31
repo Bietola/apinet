@@ -1,0 +1,12 @@
+addent "a"
+addent "b"
+
+addrel "b" "a" "fights"
+
+prel
+
+delent "b"
+
+prel
+
+end

@@ -505,6 +505,8 @@ int map_inner_remove_get_len(map_t* outer_map, const void* outer_key, const void
             if (inner_map->len == 0) {
                 map_node_t* removed = node_remove(inner_map_node_ref, outer_map->comp);
                 node_free(removed, outer_map->free_key, outer_map->free_element);
+
+                outer_map->len--;
             }
             return MAP_OK;
         } else {
@@ -626,8 +628,12 @@ void relinfo_print(FILE* out_f, const void* v_relinfo) {
 // Add a relation to the database
 // TODO: check for malformed relations (such as those among entities that do not exist)  
 // TODO OPT: do not clone keys everytime (rel_id, rxing_ent and txin_end are cloned w\ strclone everytime)
-void rel_add(map_t* /* of relinfo_t */ relations,
+void rel_add(map_t* /* of str */ entities, map_t* /* of relinfo_t */ relations,
              const char* txing_ent, const char* rxing_ent, const char* rel_id) {
+    if (!map_get(entities, txing_ent) || !map_get(entities, rxing_ent)) {
+        return;
+    }
+
     relinfo_t* relinfo = map_get_or(relations, rel_id, &v_relinfo_empty);
 
     intptr_t curr_tx_amount = 0; 
@@ -666,6 +672,12 @@ void rel_del(map_t* /* of relinfo_t */ relations,
              const char* txing_ent, const char* rxing_ent, const char* rel_id) {
     // Get relinfo relative to removed relation
     map_node_t** relinfo_node_ref = node_get_ref(&(relations->root), rel_id, relations->comp);
+
+    // Exit if relation to remove doesn't exist
+    if (!(*relinfo_node_ref)) {
+        return;
+    }
+
     relinfo_t* relinfo = (relinfo_t*) ((*relinfo_node_ref)->data);
 
     // Remove rxing_ent and txing_ent
@@ -698,6 +710,123 @@ void rel_del(map_t* /* of relinfo_t */ relations,
         }
     }
 }
+
+// Delete an entity and all of its relations
+void ent_del_update_relinfo(map_t* relations, map_node_t** cur_ri_node_ref, const char* to_remove);
+void ent_del_update_tx_and_amm(relinfo_t* relinfo, map_node_t** cur_txs_node, const char* to_remove);
+void ent_del(map_t* /* or str */ entities, map_t* /* of relinfo */ relations, const char* to_remove) {
+    // TODO: consider if this is useful
+    if (map_remove(entities, (const void*) to_remove) == MAP_OK) {
+        ent_del_update_relinfo(relations, &(relations->root), to_remove);
+    }
+}
+// Helper function for recursion
+void ent_del_update_relinfo(map_t* relations, map_node_t** cur_ri_node_ref, const char* to_remove) {
+    map_node_t* cur_ri_node = *NOTNULL(cur_ri_node_ref);
+
+    if (cur_ri_node) {
+        // Recursive walk
+        ent_del_update_relinfo(relations, &(cur_ri_node->left), to_remove);
+        ent_del_update_relinfo(relations, &(cur_ri_node->right), to_remove);
+
+        relinfo_t* relinfo = (relinfo_t*) cur_ri_node->data;
+        map_t* rxs_map = relinfo->rxing_ents_map;
+
+        // Update tx_set associated with current rx ent
+        ent_del_update_tx_and_amm(relinfo, &(relinfo->rxing_ents_map->root), to_remove);
+
+        // Tx-amm update could have left relinfo empty and in need of deallocation
+        if (relinfo_is_empty(relinfo)) {
+            map_node_t* node_to_remove = node_remove(cur_ri_node_ref, relations->comp);
+            relations->len--;
+            assert(node_to_remove);
+            node_free(node_to_remove, relations->free_key, relations->free_element);
+
+            return;
+        }
+
+        // Get reference to node to remove to extract length of
+        // associated txs_set
+        map_node_t** node_to_remove_ref = node_get_ref(&(rxs_map->root),
+                (const void*) to_remove,
+                rxs_map->comp);
+        if (!(*node_to_remove_ref)) {
+            // Nothing left to do if no node to remove
+            return;
+        }
+        int txs_len = ((map_t*) (*node_to_remove_ref)->data)->len;
+
+        // Do actual removal of rx ent
+        map_node_t* node_to_remove = node_remove(node_to_remove_ref, rxs_map->comp);
+
+        if (node_to_remove) {
+            // Deallocate removed element
+            node_free(node_to_remove, rxs_map->free_key, rxs_map->free_element);
+
+            // Update map length
+            rxs_map->len--;
+
+            //
+            if (relinfo_is_empty(relinfo)) {
+                node_free(node_remove(cur_ri_node_ref, relations->comp),
+                        relations->free_key,
+                        relations->free_element);
+                relations->len--;
+                return;
+            } else {
+                // Update amm cache with regard to the removed rx entity
+                int removal_res = map_inner_remove(relinfo->rxing_amounts_map,
+                        (const void*) (intptr_t) txs_len,
+                        to_remove);
+                assert(removal_res == MAP_OK);
+            }
+        }
+
+    }
+}
+// Another helper function
+void ent_del_update_tx_and_amm(relinfo_t* relinfo, map_node_t** cur_txs_node_ref, const char* to_remove) {
+    NULLCHECK(relinfo);
+
+    map_node_t* cur_txs_node = *NOTNULL(cur_txs_node_ref);
+    map_t* amm_map = relinfo->rxing_amounts_map;
+    map_t* rxs_map = relinfo->rxing_ents_map;
+
+    if (cur_txs_node) {
+        // Recursively walk the map
+        ent_del_update_tx_and_amm(relinfo, &(cur_txs_node->left), to_remove);
+        ent_del_update_tx_and_amm(relinfo, &(cur_txs_node->right), to_remove);
+
+        map_t* txs = (map_t*) cur_txs_node->data;
+
+        // Attempt to remove tx ent
+        if (map_remove(txs, to_remove) == MAP_OK) {
+            // Update amm cache
+            int len = txs->len;
+            int removal_res = map_inner_remove(amm_map,
+                    (const void*) (intptr_t) (len + 1),
+                    cur_txs_node->key);
+            assert(removal_res == MAP_OK);
+
+            if (len > 0) {
+                int add_res = set_add(map_get_or(amm_map,
+                            (const void*) (intptr_t) len,
+                            &v_strset_empty),
+                        cur_txs_node->key);
+                assert(add_res == MAP_OK);
+            }
+
+            // Deallocate rx entry associated with empty tx set
+            if (len == 0) {
+                map_node_t* node_to_remove = node_remove(cur_txs_node_ref, rxs_map->comp);
+                rxs_map->len--;
+                assert(node_to_remove);
+                node_free(node_to_remove, rxs_map->free_key, rxs_map->free_element);
+            }
+        }
+    }
+}
+
 
 // TODO: implement this with currying (see above)
 /************************************************************************************/
@@ -840,7 +969,7 @@ int main(int argc, char** argv) {
             char* to_remove = scan_id(in_f, 1);
 
             // Perform removal
-            map_remove(entities, (void*) to_remove);
+            ent_del(entities, relations, to_remove);
 
         } else if (strcmp(command, "addrel") == 0) {
             // Get name of txing entity
@@ -853,7 +982,7 @@ int main(int argc, char** argv) {
             char* relation = scan_id(in_f, 0);
 
             // Add relation
-            rel_add(relations, txing_ent, rxing_ent, relation);
+            rel_add(entities, relations, txing_ent, rxing_ent, relation);
 
         } else if (strcmp(command, "delrel") == 0) {
             // Get name of txing entity

@@ -36,7 +36,7 @@ none
 "fights" "Clara_Oswald" "River_Song" 4; "kills" "Kantrofarri" 3; 
 "fights" "Clara_Oswald" "River_Song" 4; "kills" "Kantrofarri" 3; 
 "fights" "River_Song" 4; "kills" "Kantrofarri" 3; 
-"fights" "Clara_Oswald" "River_Song" 3; "kills" "Kantrofarri" 3; 
+"fights" "Clara_Oswald" "River_Song" 3; "kills" "Kantrofarri" 3;
 "fights" "Clara_Oswald" "River_Song" 3; "kills" "Kantrofarri" "Mister_Sweet" 2; 
 "fights" "Clara_Oswald" "River_Song" 3; "kills" "Kantrofarri" "Mister_Sweet" 2; 
 "fights" "Clara_Oswald" "River_Song" 3; "kills" "Kantrofarri" "Mister_Sweet" 2; 
@@ -52,4 +52,4 @@ none
 "kills" "Veil" 1; 
 "kills" "Veil" 1; 
 "kills" "Veil" 1; 
-"kills" "Veil" 1; 
+"kills" "Veil" 1;    
